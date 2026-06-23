@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import type { Member, Message } from "../src/domain/types.js";
+import type { Constraint, ConstraintType, Member, Message } from "../src/domain/types.js";
 import { handleMessage } from "../src/plan/orchestrator.js";
 import { resetParticipation, setParticipation } from "../src/governor/participation.js";
 import {
@@ -54,6 +54,20 @@ function message(groupId: string, senderId: string, text: string): Message {
     text,
     timestamp: new Date().toISOString(),
     mentionsPolo: /\bpolo\b/i.test(text),
+  };
+}
+
+function constraint(type: ConstraintType, value: string, source: string, sourceMessageId = randomUUID()): Constraint {
+  return {
+    id: randomUUID(),
+    type,
+    value,
+    source,
+    sourceMessageId,
+    confidence: 0.9,
+    status: "active",
+    scope: "shared",
+    capturedAt: new Date().toISOString(),
   };
 }
 
@@ -115,21 +129,11 @@ test("the participation activePlanId routes updates to the intended open plan", 
   const { groupId, transport } = setup();
   const dinnerPlan = createPlan(groupId, "dinner on saturday");
   updatePlanPhase(groupId, dinnerPlan.id, "collecting_constraints");
-  addConstraint(groupId, dinnerPlan.id, {
-    type: "date",
-    value: "saturday",
-    source: "rey",
-    confidence: 0.9,
-  });
+  addConstraint(groupId, dinnerPlan.id, constraint("date", "saturday", "rey"));
 
   const brunchPlan = createPlan(groupId, "brunch on sunday");
   updatePlanPhase(groupId, brunchPlan.id, "collecting_constraints");
-  addConstraint(groupId, brunchPlan.id, {
-    type: "date",
-    value: "sunday",
-    source: "maya",
-    confidence: 0.9,
-  });
+  addConstraint(groupId, brunchPlan.id, constraint("date", "sunday", "maya"));
   setParticipation(groupId, "facilitating", brunchPlan.id);
 
   await handleMessage(message(groupId, "sam", "Polo downtown works for sunday brunch"), transport);
@@ -138,4 +142,22 @@ test("the participation activePlanId routes updates to the intended open plan", 
   const reloadedBrunch = getPlan(groupId, brunchPlan.id);
   assert.equal(reloadedDinner?.constraints.some((constraint) => constraint.source === "sam"), false);
   assert.equal(reloadedBrunch?.constraints.some((constraint) => constraint.source === "sam"), true);
+});
+
+test("changed constraints keep provenance instead of overwriting history", async () => {
+  const { groupId, transport } = setup();
+  const first = message(groupId, "rey", "Polo dinner saturday downtown");
+  const second = message(groupId, "rey", "Polo actually sunday downtown");
+
+  await handleMessage(first, transport);
+  await handleMessage(second, transport);
+
+  const plan = getActivePlan(groupId);
+  const dates = plan?.constraints.filter((candidate) => candidate.type === "date") ?? [];
+
+  assert.equal(dates.length, 2);
+  assert.ok(dates.some((candidate) => candidate.value === "saturday" && candidate.status === "superseded"));
+  assert.ok(dates.some((candidate) => candidate.value === "sunday" && candidate.status === "active"));
+  assert.ok(dates.some((candidate) => candidate.sourceMessageId === first.id));
+  assert.ok(dates.some((candidate) => candidate.sourceMessageId === second.id));
 });

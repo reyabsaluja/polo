@@ -1,4 +1,5 @@
 import type { Constraint, Member, MemberId, Message } from "../domain/types.js";
+import { randomUUID } from "node:crypto";
 import { getClient } from "./client.js";
 
 interface ExtractionResult {
@@ -15,7 +16,7 @@ export async function extractConstraints(
   const memberMap = new Map(members.map((m) => [m.id, m.name]));
 
   const conversationText = messages
-    .map((m) => `${memberMap.get(m.senderId) ?? m.senderId}: ${m.text}`)
+    .map((m) => `${memberMap.get(m.senderId) ?? m.senderId} [message_id: ${m.id}]: ${m.text}`)
     .join("\n");
 
   const memberList = members.map((m) => `- ${m.name} (id: ${m.id})`).join("\n");
@@ -40,6 +41,7 @@ Extract the following as JSON:
       "type": "date" | "time" | "location" | "budget" | "dietary" | "attendance" | "preference",
       "value": "the constraint value as stated",
       "source": "member_id who stated this",
+      "sourceMessageId": "message_id where this was stated",
       "confidence": 0.0 to 1.0
     }
   ],
@@ -50,6 +52,7 @@ Extract the following as JSON:
 Rules:
 - Only extract constraints that were explicitly stated or strongly implied
 - Confidence should reflect how clearly the constraint was stated
+- sourceMessageId must be the exact message_id where the constraint was stated
 - missingInfo should list the 1-2 most important gaps (budget? time? location?)
 - Do NOT invent constraints that weren't mentioned
 - If someone seems interested based on their participation, include them
@@ -60,6 +63,7 @@ Return ONLY the JSON, no other text.`,
   });
 
   const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+  const capturedAt = new Date().toISOString();
 
   try {
     const parsed = JSON.parse(text);
@@ -69,7 +73,12 @@ Return ONLY the JSON, no other text.`,
         type: c.type as Constraint["type"],
         value: String(c.value),
         source: String(c.source),
+        sourceMessageId: resolveSourceMessageId(c, messages),
         confidence: Number(c.confidence) || 0.5,
+        id: randomUUID(),
+        status: "active",
+        scope: "shared",
+        capturedAt,
       })),
       interestedMembers: parsed.interestedMembers ?? [],
       missingInfo: parsed.missingInfo ?? [],
@@ -82,4 +91,17 @@ Return ONLY the JSON, no other text.`,
       missingInfo: ["Could not parse constraints from conversation"],
     };
   }
+}
+
+function resolveSourceMessageId(candidate: Record<string, unknown>, messages: Message[]): string {
+  const claimed = String(candidate.sourceMessageId ?? "");
+  if (messages.some((message) => message.id === claimed)) return claimed;
+
+  const source = String(candidate.source ?? "");
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message?.senderId === source) return message.id;
+  }
+
+  return messages[messages.length - 1]?.id ?? randomUUID();
 }

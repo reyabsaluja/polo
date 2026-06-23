@@ -161,11 +161,30 @@ export function addConstraint(groupId: GroupId, planId: PlanId, constraint: Cons
   const plan = groups.get(groupId)?.plans.get(planId);
   if (plan) {
     const existing = plan.constraints.findIndex(
-      (c) => c.type === constraint.type && c.source === constraint.source
+      (c) =>
+        c.type === constraint.type &&
+        c.value === constraint.value &&
+        c.sourceMessageId === constraint.sourceMessageId
     );
     if (existing >= 0) {
-      plan.constraints[existing] = constraint;
+      const previous = plan.constraints[existing]!;
+      plan.constraints[existing] = {
+        ...constraint,
+        id: previous.id,
+        capturedAt: previous.capturedAt,
+        status: previous.status,
+      };
     } else {
+      for (const prior of plan.constraints) {
+        if (
+          prior.status === "active" &&
+          prior.type === constraint.type &&
+          prior.source === constraint.source &&
+          prior.value !== constraint.value
+        ) {
+          prior.status = "superseded";
+        }
+      }
       plan.constraints.push(constraint);
     }
     plan.updatedAt = new Date().toISOString();

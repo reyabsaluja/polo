@@ -12,6 +12,9 @@ export type ConstraintType =
   | "attendance"
   | "preference";
 
+export type ConstraintStatus = "active" | "superseded" | "rejected";
+export type ConstraintScope = "shared" | "private" | "ephemeral";
+
 export interface Member {
   id: MemberId;
   name: string;
@@ -35,10 +38,16 @@ export interface Message {
 }
 
 export interface Constraint {
+  id: string;
   type: ConstraintType;
   value: string;
   source: MemberId;
+  sourceMessageId: MessageId;
   confidence: number;
+  status: ConstraintStatus;
+  scope: ConstraintScope;
+  capturedAt: string;
+  normalizedValue?: string;
 }
 
 export interface ExpectedInput {

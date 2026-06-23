@@ -1,4 +1,5 @@
 import type { Constraint, Member, MemberId, Message } from "../domain/types.js";
+import { randomUUID } from "node:crypto";
 
 interface ExtractionResult {
   constraints: Constraint[];
@@ -13,6 +14,7 @@ export function mockExtractConstraints(
 ): ExtractionResult {
   const constraints: Constraint[] = [];
   const interested: Set<MemberId> = new Set();
+  const capturedAt = new Date().toISOString();
 
   for (const msg of messages) {
     const text = msg.text.toLowerCase();
@@ -20,27 +22,27 @@ export function mockExtractConstraints(
 
     if (/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(text)) {
       const day = text.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/)?.[1];
-      if (day) constraints.push({ type: "date", value: day, source: msg.senderId, confidence: 0.9 });
+      if (day) constraints.push(constraint("date", day, msg, 0.9, capturedAt));
     }
 
     if (/\b(downtown|midtown|uptown|east side|west side)\b/.test(text)) {
       const loc = text.match(/\b(downtown|midtown|uptown|east side|west side)\b/)?.[1];
-      if (loc) constraints.push({ type: "location", value: loc, source: msg.senderId, confidence: 0.8 });
+      if (loc) constraints.push(constraint("location", loc, msg, 0.8, capturedAt));
     }
 
     if (/\b(vegetarian|vegan|gluten.free|halal|kosher)\b/.test(text)) {
       const diet = text.match(/\b(vegetarian|vegan|gluten.free|halal|kosher)\b/)?.[1];
-      if (diet) constraints.push({ type: "dietary", value: diet, source: msg.senderId, confidence: 0.95 });
+      if (diet) constraints.push(constraint("dietary", diet, msg, 0.95, capturedAt));
     }
 
     if (/\bunder\s*\$?\d+\b|\b\$\d+\b|\bbudget\b/.test(text)) {
       const amount = text.match(/\$?(\d+)/)?.[1];
-      if (amount) constraints.push({ type: "budget", value: `under $${amount}`, source: msg.senderId, confidence: 0.85 });
+      if (amount) constraints.push(constraint("budget", `under $${amount}`, msg, 0.85, capturedAt));
     }
 
     if (/\bnot too (late|early)\b|\bafter \d|\bbefore \d/.test(text)) {
       const time = text.match(/not too (late|early)|(?:after|before) \d+/)?.[0];
-      if (time) constraints.push({ type: "time", value: time, source: msg.senderId, confidence: 0.7 });
+      if (time) constraints.push(constraint("time", time, msg, 0.7, capturedAt));
     }
   }
 
@@ -87,4 +89,24 @@ export function mockGenerateResponse(
   }
 
   return parts.join(" ");
+}
+
+function constraint(
+  type: Constraint["type"],
+  value: string,
+  message: Message,
+  confidence: number,
+  capturedAt: string
+): Constraint {
+  return {
+    id: randomUUID(),
+    type,
+    value,
+    source: message.senderId,
+    sourceMessageId: message.id,
+    confidence,
+    status: "active",
+    scope: "shared",
+    capturedAt,
+  };
 }
