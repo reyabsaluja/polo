@@ -583,7 +583,6 @@ export function recordDecision(groupId: GroupId, planId: PlanId, decision: Decis
   const plan = groups.get(groupId)?.plans.get(planId);
   if (plan) {
     plan.decision = decision;
-    plan.phase = "decided";
     plan.updatedAt = new Date().toISOString();
     appendGroupEvent(groupId, {
       type: "decision.recorded",
@@ -591,6 +590,7 @@ export function recordDecision(groupId: GroupId, planId: PlanId, decision: Decis
       summary: decision.summary,
       payload: { decision },
     });
+    updatePlanPhase(groupId, planId, "decided");
   }
 }
 
