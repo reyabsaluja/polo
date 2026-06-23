@@ -12,7 +12,7 @@ export type ConstraintType =
   | "attendance"
   | "preference";
 
-export type ConstraintStatus = "active" | "superseded" | "rejected";
+export type ConstraintStatus = "active" | "superseded";
 export type ConstraintScope = "shared" | "private" | "ephemeral";
 
 export interface Member {
@@ -46,7 +46,6 @@ export interface PrivateContext {
   scope: Exclude<ConstraintScope, "shared">;
   text: string;
   capturedAt: string;
-  expiresAt?: string;
 }
 
 export type GroupEventType =
@@ -87,7 +86,6 @@ export interface Constraint {
   status: ConstraintStatus;
   scope: ConstraintScope;
   capturedAt: string;
-  normalizedValue?: string;
 }
 
 export interface ExpectedInput {
@@ -220,10 +218,3 @@ export interface Commitment {
   completed: boolean;
 }
 
-export interface Poll {
-  planId: PlanId;
-  question: string;
-  options: PlanOption[];
-  deadline?: string;
-  closed: boolean;
-}
