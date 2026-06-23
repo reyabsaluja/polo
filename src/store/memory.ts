@@ -15,13 +15,16 @@ import type {
   PlanId,
   PlanOption,
   PlanPhase,
+  PrivateContext,
 } from "../domain/types.js";
 import { randomUUID } from "crypto";
+import { messageScope } from "../privacy/context.js";
 
 interface GroupStore {
   group: Group;
   plans: Map<PlanId, Plan>;
   messages: Message[];
+  privateContexts: PrivateContext[];
   messageIds: Set<MessageId>;
   events: GroupEvent[];
   sharedMemory: Map<string, string>;
@@ -35,6 +38,7 @@ export function createGroup(id: GroupId, name: string, members: Member[]): Group
     group,
     plans: new Map(),
     messages: [],
+    privateContexts: [],
     messageIds: new Set(),
     events: [],
     sharedMemory: new Map(),
@@ -60,13 +64,29 @@ export function storeMessage(message: Message): boolean {
   if (store.messageIds.has(message.id)) return false;
 
   store.messageIds.add(message.id);
-  store.messages.push(message);
+  const scope = messageScope(message);
+  if (scope === "shared") {
+    store.messages.push(message);
+  } else {
+    store.privateContexts.push({
+      id: randomUUID(),
+      groupId: message.groupId,
+      memberId: message.senderId,
+      messageId: message.id,
+      scope,
+      text: message.text,
+      capturedAt: new Date().toISOString(),
+    });
+  }
+
   appendGroupEvent(message.groupId, {
     type: "message.received",
     actorId: message.senderId,
     messageId: message.id,
-    summary: "Message received",
-    payload: { text: message.text, scope: message.scope ?? "shared" },
+    summary: scope === "shared" ? "Message received" : "Private message received",
+    payload: scope === "shared"
+      ? { text: message.text, scope }
+      : { scope, redacted: true },
   });
   return true;
 }
@@ -75,6 +95,11 @@ export function getRecentMessages(groupId: GroupId, count: number): Message[] {
   const store = groups.get(groupId);
   if (!store) return [];
   return store.messages.slice(-count);
+}
+
+export function getPrivateContexts(groupId: GroupId, memberId?: MemberId): PrivateContext[] {
+  const contexts = groups.get(groupId)?.privateContexts ?? [];
+  return contexts.filter((context) => !memberId || context.memberId === memberId);
 }
 
 export function createPlan(groupId: GroupId, description: string): Plan {

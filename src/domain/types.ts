@@ -38,6 +38,17 @@ export interface Message {
   scope?: ConstraintScope;
 }
 
+export interface PrivateContext {
+  id: string;
+  groupId: GroupId;
+  memberId: MemberId;
+  messageId: MessageId;
+  scope: Exclude<ConstraintScope, "shared">;
+  text: string;
+  capturedAt: string;
+  expiresAt?: string;
+}
+
 export type GroupEventType =
   | "message.received"
   | "message.sent"

@@ -10,6 +10,7 @@ import {
   createPlan,
   getActivePlan,
   getGroupEvents,
+  getPrivateContexts,
   getPlan,
   recordDecision,
   resetMemory,
@@ -183,6 +184,13 @@ test("private-scoped messages do not create a public group response", async () =
   assert.equal(response, null);
   assert.equal(transport.messages.length, 0);
   assert.equal(getActivePlan(groupId), undefined);
+
+  const contexts = getPrivateContexts(groupId, "maya");
+  assert.equal(contexts.length, 1);
+  assert.equal(contexts[0]?.text, privateMessage.text);
+
+  const receivedEvent = getGroupEvents(groupId).find((event) => event.messageId === privateMessage.id);
+  assert.deepEqual(receivedEvent?.payload, { scope: "private", redacted: true });
 });
 
 test("prompt formatting excludes private raw message text", () => {
