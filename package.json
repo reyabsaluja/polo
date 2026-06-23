@@ -8,7 +8,7 @@
     "dev": "tsx watch src/harness/cli.ts",
     "start": "tsx src/harness/cli.ts",
     "test": "node --import tsx --test tests/**/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "keywords": [],
   "author": "",
