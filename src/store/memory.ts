@@ -40,7 +40,7 @@ interface GroupStore {
 
 const groups = new Map<GroupId, GroupStore>();
 
-export function createGroup(id: GroupId, name: string, members: Member[]): Group {
+function createGroup(id: GroupId, name: string, members: Member[]): Group {
   const group: Group = { id, name, members, createdAt: new Date().toISOString() };
   groups.set(id, {
     group,
@@ -54,19 +54,19 @@ export function createGroup(id: GroupId, name: string, members: Member[]): Group
   return group;
 }
 
-export function resetMemory(): void {
+function resetMemory(): void {
   groups.clear();
 }
 
-export function getGroup(id: GroupId): Group | undefined {
+function getGroup(id: GroupId): Group | undefined {
   return groups.get(id)?.group;
 }
 
-export function getMember(groupId: GroupId, memberId: MemberId): Member | undefined {
+function getMember(groupId: GroupId, memberId: MemberId): Member | undefined {
   return groups.get(groupId)?.group.members.find((m) => m.id === memberId);
 }
 
-export function storeMessage(message: Message): boolean {
+function storeMessage(message: Message): boolean {
   const store = groups.get(message.groupId);
   if (!store) return false;
   if (store.messageIds.has(message.id)) return false;
@@ -99,18 +99,18 @@ export function storeMessage(message: Message): boolean {
   return true;
 }
 
-export function getRecentMessages(groupId: GroupId, count: number): Message[] {
+function getRecentMessages(groupId: GroupId, count: number): Message[] {
   const store = groups.get(groupId);
   if (!store) return [];
   return store.messages.slice(-count);
 }
 
-export function getPrivateContexts(groupId: GroupId, memberId?: MemberId): PrivateContext[] {
+function getPrivateContexts(groupId: GroupId, memberId?: MemberId): PrivateContext[] {
   const contexts = groups.get(groupId)?.privateContexts ?? [];
   return contexts.filter((context) => !memberId || context.memberId === memberId);
 }
 
-export function createPlan(groupId: GroupId, description: string): Plan {
+function createPlan(groupId: GroupId, description: string): Plan {
   const plan: Plan = {
     id: randomUUID(),
     groupId,
@@ -139,17 +139,17 @@ export function createPlan(groupId: GroupId, description: string): Plan {
   return plan;
 }
 
-export function getActivePlan(groupId: GroupId): Plan | undefined {
+function getActivePlan(groupId: GroupId): Plan | undefined {
   const store = groups.get(groupId);
   if (!store) return undefined;
   return getOpenPlansByUpdatedAt(store)[0];
 }
 
-export function getPlan(groupId: GroupId, planId: PlanId): Plan | undefined {
+function getPlan(groupId: GroupId, planId: PlanId): Plan | undefined {
   return groups.get(groupId)?.plans.get(planId);
 }
 
-export function getRoutablePlan(groupId: GroupId, routing?: PlanRoutingHints): Plan | undefined {
+function getRoutablePlan(groupId: GroupId, routing?: PlanRoutingHints): Plan | undefined {
   const store = groups.get(groupId);
   if (!store) return undefined;
 
@@ -164,7 +164,7 @@ export function getRoutablePlan(groupId: GroupId, routing?: PlanRoutingHints): P
   return getActivePlan(groupId);
 }
 
-export function addPlanRoute(
+function addPlanRoute(
   groupId: GroupId,
   planId: PlanId,
   kind: PlanRouteKind,
@@ -187,7 +187,7 @@ export function addPlanRoute(
   return route;
 }
 
-export function createCollection(
+function createCollection(
   groupId: GroupId,
   planId: PlanId,
   input: CreateCollectionInput
@@ -230,7 +230,7 @@ export function createCollection(
   return collection;
 }
 
-export function getCollection(
+function getCollection(
   groupId: GroupId,
   planId: PlanId,
   collectionId: string
@@ -238,12 +238,12 @@ export function getCollection(
   return groups.get(groupId)?.plans.get(planId)?.collections.find((collection) => collection.id === collectionId);
 }
 
-export function getOpenCollections(groupId: GroupId, planId: PlanId, kind?: CollectionKind): Collection[] {
+function getOpenCollections(groupId: GroupId, planId: PlanId, kind?: CollectionKind): Collection[] {
   const collections = groups.get(groupId)?.plans.get(planId)?.collections ?? [];
   return collections.filter((collection) => collection.status === "open" && (!kind || collection.kind === kind));
 }
 
-export function linkCollectionTransportRef(
+function linkCollectionTransportRef(
   groupId: GroupId,
   planId: PlanId,
   collectionId: string,
@@ -257,7 +257,7 @@ export function linkCollectionTransportRef(
   addRouteForTransportRef(groupId, planId, collection.transportRef);
 }
 
-export function recordCollectionResponse(
+function recordCollectionResponse(
   groupId: GroupId,
   planId: PlanId,
   collectionId: string,
@@ -307,7 +307,7 @@ export function recordCollectionResponse(
   });
 }
 
-export function closeCollection(groupId: GroupId, planId: PlanId, collectionId: string): void {
+function closeCollection(groupId: GroupId, planId: PlanId, collectionId: string): void {
   const collection = getCollection(groupId, planId, collectionId);
   if (!collection || collection.status !== "open") return;
 
@@ -397,7 +397,7 @@ function findPollCollection(plan: Plan, pollId?: string): Collection | undefined
   return plan.collections.find((collection) => collection.kind === "poll" && collection.status === "open");
 }
 
-export function updatePlanPhase(groupId: GroupId, planId: PlanId, phase: PlanPhase): void {
+function updatePlanPhase(groupId: GroupId, planId: PlanId, phase: PlanPhase): void {
   const plan = groups.get(groupId)?.plans.get(planId);
   if (plan) {
     plan.phase = phase;
@@ -411,12 +411,12 @@ export function updatePlanPhase(groupId: GroupId, planId: PlanId, phase: PlanPha
   }
 }
 
-export function getOpenExpectedInput(groupId: GroupId, planId: PlanId): ExpectedInput | undefined {
+function getOpenExpectedInput(groupId: GroupId, planId: PlanId): ExpectedInput | undefined {
   const plan = groups.get(groupId)?.plans.get(planId);
   return plan?.expectedInputs.find((input) => input.status === "open");
 }
 
-export function setOpenConstraintInput(
+function setOpenConstraintInput(
   groupId: GroupId,
   planId: PlanId,
   constraintType: ConstraintType,
@@ -464,7 +464,7 @@ export function setOpenConstraintInput(
   return input;
 }
 
-export function satisfyExpectedInput(
+function satisfyExpectedInput(
   groupId: GroupId,
   planId: PlanId,
   inputId: string,
@@ -486,7 +486,7 @@ export function satisfyExpectedInput(
   });
 }
 
-export function addConstraint(groupId: GroupId, planId: PlanId, constraint: Constraint): void {
+function addConstraint(groupId: GroupId, planId: PlanId, constraint: Constraint): void {
   const plan = groups.get(groupId)?.plans.get(planId);
   if (plan) {
     const existing = plan.constraints.findIndex(
@@ -529,7 +529,7 @@ export function addConstraint(groupId: GroupId, planId: PlanId, constraint: Cons
   }
 }
 
-export function addInterestedMember(groupId: GroupId, planId: PlanId, memberId: MemberId): void {
+function addInterestedMember(groupId: GroupId, planId: PlanId, memberId: MemberId): void {
   const plan = groups.get(groupId)?.plans.get(planId);
   if (plan && !plan.interestedMembers.includes(memberId)) {
     plan.interestedMembers.push(memberId);
@@ -537,7 +537,7 @@ export function addInterestedMember(groupId: GroupId, planId: PlanId, memberId: 
   }
 }
 
-export function setPlanOptions(groupId: GroupId, planId: PlanId, options: PlanOption[]): void {
+function setPlanOptions(groupId: GroupId, planId: PlanId, options: PlanOption[]): void {
   const plan = groups.get(groupId)?.plans.get(planId);
   if (plan) {
     plan.options = options;
@@ -545,7 +545,7 @@ export function setPlanOptions(groupId: GroupId, planId: PlanId, options: PlanOp
   }
 }
 
-export function recordVote(
+function recordVote(
   groupId: GroupId,
   planId: PlanId,
   optionId: string,
@@ -579,7 +579,7 @@ export function recordVote(
   }
 }
 
-export function recordDecision(groupId: GroupId, planId: PlanId, decision: Decision): void {
+function recordDecision(groupId: GroupId, planId: PlanId, decision: Decision): void {
   const plan = groups.get(groupId)?.plans.get(planId);
   if (plan) {
     plan.decision = decision;
@@ -594,7 +594,7 @@ export function recordDecision(groupId: GroupId, planId: PlanId, decision: Decis
   }
 }
 
-export function addCommitment(groupId: GroupId, planId: PlanId, commitment: Commitment): void {
+function addCommitment(groupId: GroupId, planId: PlanId, commitment: Commitment): void {
   const plan = groups.get(groupId)?.plans.get(planId);
   if (plan) {
     plan.commitments.push(commitment);
@@ -609,16 +609,16 @@ export function addCommitment(groupId: GroupId, planId: PlanId, commitment: Comm
   }
 }
 
-export function saveSharedMemory(groupId: GroupId, key: string, value: string): void {
+function saveSharedMemory(groupId: GroupId, key: string, value: string): void {
   const store = groups.get(groupId);
   if (store) store.sharedMemory.set(key, value);
 }
 
-export function getSharedMemory(groupId: GroupId, key: string): string | undefined {
+function getSharedMemory(groupId: GroupId, key: string): string | undefined {
   return groups.get(groupId)?.sharedMemory.get(key);
 }
 
-export function recordOutgoingMessage(groupId: GroupId, text: string, planId?: PlanId, messageId?: MessageId): void {
+function recordOutgoingMessage(groupId: GroupId, text: string, planId?: PlanId, messageId?: MessageId): void {
   appendGroupEvent(groupId, {
     type: "message.sent",
     planId,
@@ -628,7 +628,7 @@ export function recordOutgoingMessage(groupId: GroupId, text: string, planId?: P
   });
 }
 
-export function getGroupEvents(groupId: GroupId): GroupEvent[] {
+function getGroupEvents(groupId: GroupId): GroupEvent[] {
   return [...(groups.get(groupId)?.events ?? [])];
 }
 

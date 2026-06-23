@@ -1,7 +1,7 @@
 import * as readline from "node:readline";
 import { randomUUID } from "node:crypto";
 import type { Member, Message } from "../domain/types.js";
-import { createGroup, getActivePlan, memoryRepository } from "../store/memory.js";
+import { memoryRepository } from "../store/memory.js";
 import { handleTransportEvent } from "../plan/orchestrator.js";
 import { CliTransport } from "./cli-transport.js";
 
@@ -19,7 +19,7 @@ const members: Member[] = [
 ];
 
 const GROUP_ID = "friend-group";
-createGroup(GROUP_ID, "The Squad", members);
+memoryRepository.createGroup(GROUP_ID, "The Squad", members);
 
 const transport = new CliTransport();
 let currentUser = members[0]!;
@@ -99,7 +99,7 @@ async function handleCommand(input: string): Promise<boolean> {
   }
 
   if (cmd === "/plan") {
-    const plan = getActivePlan(GROUP_ID);
+    const plan = memoryRepository.getActivePlan(GROUP_ID);
     if (!plan) {
       console.log(`${DIM}  No active plan.${RESET}`);
     } else {
@@ -164,7 +164,7 @@ async function handleCommand(input: string): Promise<boolean> {
 }
 
 async function handleVote(optionNumber: string | undefined): Promise<boolean> {
-  const plan = getActivePlan(GROUP_ID);
+  const plan = memoryRepository.getActivePlan(GROUP_ID);
   if (!plan || plan.options.length === 0) {
     console.log(`${DIM}  No active poll to vote on.${RESET}`);
     return true;
@@ -217,7 +217,7 @@ async function processMessage(text: string): Promise<void> {
     console.log(`${DIM}  [Plan created: "${result.newPlan.description}"]${RESET}`);
   }
   if (result?.phaseAdvanced) {
-    const plan = getActivePlan(GROUP_ID);
+    const plan = memoryRepository.getActivePlan(GROUP_ID);
     if (plan) {
       console.log(`${DIM}  [Phase: ${plan.phase}]${RESET}`);
     }

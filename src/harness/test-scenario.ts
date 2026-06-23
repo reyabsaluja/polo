@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Message, Plan } from "../domain/types.js";
-import { createGroup, getActivePlan, memoryRepository } from "../store/memory.js";
+import { memoryRepository } from "../store/memory.js";
 import { handleTransportEvent } from "../plan/orchestrator.js";
 import { CliTransport } from "./cli-transport.js";
 
@@ -12,7 +12,7 @@ const members = [
 ];
 
 const GROUP_ID = "test-group";
-createGroup(GROUP_ID, "The Squad", members);
+memoryRepository.createGroup(GROUP_ID, "The Squad", members);
 
 const transport = new CliTransport();
 
@@ -98,7 +98,7 @@ async function run() {
   await handleTransportEvent({ kind: "message", message: budgetMsg }, transport);
 
   // Check plan state
-  const plan = getActivePlan(GROUP_ID);
+  const plan = memoryRepository.getActivePlan(GROUP_ID);
   if (!plan) {
     console.log("  ERROR: No plan exists!");
     return;
@@ -116,7 +116,7 @@ async function run() {
     console.log("\n--- Phase 3: Voting ---");
     await castVotes(plan, transport);
 
-    const finalPlan = getActivePlan(GROUP_ID);
+    const finalPlan = memoryRepository.getActivePlan(GROUP_ID);
     console.log("\n--- Final Plan State ---");
     if (finalPlan) {
       console.log(`  Phase: ${finalPlan.phase}`);
@@ -138,7 +138,7 @@ async function run() {
     console.log(`  Rey: ${triggerMsg.text}`);
     await handleTransportEvent({ kind: "message", message: triggerMsg }, transport);
 
-    const updatedPlan = getActivePlan(GROUP_ID);
+    const updatedPlan = memoryRepository.getActivePlan(GROUP_ID);
     if (updatedPlan && updatedPlan.phase === "polling") {
       console.log("\n--- Phase 3: Voting ---");
       await castVotes(updatedPlan, transport);

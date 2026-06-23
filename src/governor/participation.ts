@@ -15,7 +15,7 @@ export interface GroupParticipation {
 
 const participationStates = new Map<GroupId, GroupParticipation>();
 
-export function getParticipation(groupId: GroupId): GroupParticipation {
+function getParticipation(groupId: GroupId): GroupParticipation {
   const existing = participationStates.get(groupId);
   if (existing) return existing;
 
@@ -24,11 +24,11 @@ export function getParticipation(groupId: GroupId): GroupParticipation {
   return initial;
 }
 
-export function setParticipation(groupId: GroupId, state: ParticipationState, activePlanId?: PlanId): void {
+function setParticipation(groupId: GroupId, state: ParticipationState, activePlanId?: PlanId): void {
   participationStates.set(groupId, { groupId, state, activePlanId });
 }
 
-export function resetParticipation(): void {
+function resetParticipation(): void {
   participationStates.clear();
 }
 
