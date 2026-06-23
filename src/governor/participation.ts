@@ -2,11 +2,9 @@ import type { GroupId, Message, Plan, PlanId } from "../domain/types.js";
 import type { ParticipationRepository } from "../store/repository.js";
 
 export type ParticipationState =
-  | "dormant"
   | "mention_only"
   | "facilitating"
   | "waiting"
-  | "commitment_watch"
   | "quiet";
 
 export interface GroupParticipation {
@@ -40,16 +38,12 @@ export function shouldRespond(message: Message, activePlan: Plan | undefined): b
   if (message.mentionsPolo) return true;
 
   switch (participation.state) {
-    case "dormant":
-      return false;
     case "mention_only":
       return false;
     case "facilitating":
       return isRelevantToPlan(message, activePlan);
     case "waiting":
       return hasOpenQuestion(activePlan);
-    case "commitment_watch":
-      return false;
     case "quiet":
       return false;
   }
