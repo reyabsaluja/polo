@@ -29,13 +29,15 @@ export async function extractConstraints(
 
   const memberList = members.map((m) => `- ${m.name} (id: ${m.id})`).join("\n");
 
-  const response = await getClient().messages.create({
-    model: "claude-sonnet-4-6-20250514",
-    max_tokens: 1024,
-    messages: [
-      {
-        role: "user",
-        content: `You are analyzing a group chat conversation to extract planning constraints. The group members are:
+  let text: string;
+  try {
+    const response = await getClient().messages.create({
+      model: "claude-sonnet-4-6-20250514",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: `You are analyzing a group chat conversation to extract planning constraints. The group members are:
 ${memberList}
 
 Conversation:
@@ -66,11 +68,19 @@ Rules:
 - If someone seems interested based on their participation, include them
 
 Return ONLY the JSON, no other text.`,
-      },
-    ],
-  });
+        },
+      ],
+    });
+    text = response.content[0]?.type === "text" ? response.content[0].text : "";
+  } catch {
+    return {
+      planDescription: "group plan",
+      constraints: [],
+      interestedMembers: [],
+      missingInfo: ["Could not reach AI service"],
+    };
+  }
 
-  const text = response.content[0]?.type === "text" ? response.content[0].text : "";
   const capturedAt = new Date().toISOString();
 
   return parseExtractionJson(text, safeMessages, members, capturedAt);

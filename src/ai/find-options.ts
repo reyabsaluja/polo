@@ -17,13 +17,15 @@ export async function findOptions(plan: Plan, group: Group): Promise<OptionsResu
     .map((c) => `- ${c.type}: ${c.value} (from ${memberMap.get(c.source) ?? c.source})`)
     .join("\n");
 
-  const response = await getClient().messages.create({
-    model: "claude-sonnet-4-6-20250514",
-    max_tokens: 1024,
-    messages: [
-      {
-        role: "user",
-        content: `You are helping a friend group find options for: "${plan.description}"
+  let text: string;
+  try {
+    const response = await getClient().messages.create({
+      model: "claude-sonnet-4-6-20250514",
+      max_tokens: 1024,
+      messages: [
+        {
+          role: "user",
+          content: `You are helping a friend group find options for: "${plan.description}"
 
 Group constraints:
 ${constraintText}
@@ -51,11 +53,17 @@ Rules:
 - If constraints are too vague to find real places, suggest realistic-sounding options
 
 Return ONLY the JSON.`,
-      },
-    ],
-  });
+        },
+      ],
+    });
+    text = response.content[0]?.type === "text" ? response.content[0].text : "";
+  } catch {
+    return {
+      options: [],
+      reasoning: "Could not reach AI service.",
+    };
+  }
 
-  const text = response.content[0]?.type === "text" ? response.content[0].text : "";
   return parseOptionsResponse(text);
 }
 

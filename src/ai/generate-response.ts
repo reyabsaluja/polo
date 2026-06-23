@@ -29,10 +29,11 @@ export async function generateResponse(context: ResponseContext): Promise<string
 
   const planContext = plan ? formatPlanContextForPrompt(plan, group.members) : "No active plan.";
 
-  const response = await getClient().messages.create({
-    model: "claude-sonnet-4-6-20250514",
-    max_tokens: 300,
-    system: `You are Polo, a group coordination AI in a friend group chat. Your personality:
+  try {
+    const response = await getClient().messages.create({
+      model: "claude-sonnet-4-6-20250514",
+      max_tokens: 300,
+      system: `You are Polo, a group coordination AI in a friend group chat. Your personality:
 - Warm, concise, calm, capable
 - Socially perceptive — you know when to speak and when to be quiet
 - Direct when action is needed
@@ -47,10 +48,10 @@ Rules:
 - Don't announce your capabilities — just help
 - If someone says "help" or asks you directly, respond to THEIR specific situation
 - Frame responses as easy to answer (yes/no, pick from options, give a number)`,
-    messages: [
-      {
-        role: "user",
-        content: `Group: "${group.name}" (${group.members.map((m) => m.name).join(", ")})
+      messages: [
+        {
+          role: "user",
+          content: `Group: "${group.name}" (${group.members.map((m) => m.name).join(", ")})
 ${planContext}
 
 Recent conversation:
@@ -64,12 +65,15 @@ Key missing info: ${missingInfoText}
 ${senderName} triggered me with: "${formatTriggerForPrompt(triggerMessage)}"
 
 Generate my response. Keep it to 1-3 sentences. Be warm but efficient.`,
-      },
-    ],
-  });
+        },
+      ],
+    });
 
-  const text = response.content[0]?.type === "text" ? response.content[0].text : "";
-  return text.trim();
+    const text = response.content[0]?.type === "text" ? response.content[0].text : "";
+    return text.trim();
+  } catch {
+    return "";
+  }
 }
 
 export function formatPlanContextForPrompt(plan: Plan, members: Member[]): string {
