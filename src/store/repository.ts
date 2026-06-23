@@ -1,7 +1,11 @@
 import type {
   Commitment,
+  Collection,
+  CollectionKind,
   Constraint,
+  ConstraintScope,
   ConstraintType,
+  CreateCollectionInput,
   Decision,
   ExpectedInput,
   Group,
@@ -41,6 +45,26 @@ export interface CoordinationRepository {
     value: string,
     sourceMessageId?: MessageId
   ): PlanRoute | undefined;
+  createCollection(groupId: GroupId, planId: PlanId, input: CreateCollectionInput): Collection | undefined;
+  getCollection(groupId: GroupId, planId: PlanId, collectionId: string): Collection | undefined;
+  getOpenCollections(groupId: GroupId, planId: PlanId, kind?: CollectionKind): Collection[];
+  linkCollectionTransportRef(
+    groupId: GroupId,
+    planId: PlanId,
+    collectionId: string,
+    kind: "message" | "poll" | "card",
+    id: string
+  ): void;
+  recordCollectionResponse(
+    groupId: GroupId,
+    planId: PlanId,
+    collectionId: string,
+    memberId: MemberId,
+    value: string,
+    sourceMessageId?: MessageId,
+    scope?: ConstraintScope
+  ): void;
+  closeCollection(groupId: GroupId, planId: PlanId, collectionId: string): void;
   updatePlanPhase(groupId: GroupId, planId: PlanId, phase: PlanPhase): void;
   getOpenExpectedInput(groupId: GroupId, planId: PlanId): ExpectedInput | undefined;
   setOpenConstraintInput(
@@ -54,7 +78,7 @@ export interface CoordinationRepository {
   addConstraint(groupId: GroupId, planId: PlanId, constraint: Constraint): void;
   addInterestedMember(groupId: GroupId, planId: PlanId, memberId: MemberId): void;
   setPlanOptions(groupId: GroupId, planId: PlanId, options: PlanOption[]): void;
-  recordVote(groupId: GroupId, planId: PlanId, optionId: string, memberId: MemberId): void;
+  recordVote(groupId: GroupId, planId: PlanId, optionId: string, memberId: MemberId, pollId?: string): void;
   recordDecision(groupId: GroupId, planId: PlanId, decision: Decision): void;
   addCommitment(groupId: GroupId, planId: PlanId, commitment: Commitment): void;
   saveSharedMemory(groupId: GroupId, key: string, value: string): void;

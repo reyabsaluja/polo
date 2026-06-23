@@ -55,9 +55,13 @@ export type GroupEventType =
   | "plan.created"
   | "plan.route_added"
   | "plan.phase_updated"
+  | "collection.created"
+  | "collection.response_recorded"
+  | "collection.closed"
   | "constraint.recorded"
   | "expected_input.opened"
   | "expected_input.satisfied"
+  | "poll.vote_recorded"
   | "decision.recorded"
   | "commitment.recorded";
 
@@ -115,6 +119,61 @@ export interface PlanRoutingHints {
   threadId?: string;
 }
 
+export type CollectionKind = "constraint" | "availability" | "poll" | "rsvp";
+export type CollectionStatus = "open" | "closed" | "cancelled";
+export type CollectionVisibility = "public" | "private" | "anonymous";
+export type CollectionParticipantStatus = "pending" | "responded" | "declined" | "excluded";
+export type DecisionRule = "unanimous" | "majority" | "anyone" | "organizer";
+
+export interface CollectionParticipant {
+  memberId: MemberId;
+  status: CollectionParticipantStatus;
+  respondedAt?: string;
+}
+
+export interface CollectionResponse {
+  id: string;
+  memberId: MemberId;
+  value: string;
+  scope: ConstraintScope;
+  capturedAt: string;
+  sourceMessageId?: MessageId;
+}
+
+export interface TransportReference {
+  kind: "message" | "poll" | "card";
+  id: string;
+}
+
+export interface Collection {
+  id: string;
+  groupId: GroupId;
+  planId: PlanId;
+  kind: CollectionKind;
+  prompt: string;
+  status: CollectionStatus;
+  visibility: CollectionVisibility;
+  decisionRule?: DecisionRule;
+  deadline?: string;
+  participants: CollectionParticipant[];
+  responses: CollectionResponse[];
+  options?: PlanOption[];
+  transportRef?: TransportReference;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateCollectionInput {
+  kind: CollectionKind;
+  prompt: string;
+  targetMemberIds?: MemberId[];
+  visibility?: CollectionVisibility;
+  decisionRule?: DecisionRule;
+  deadline?: string;
+  options?: PlanOption[];
+  transportRef?: TransportReference;
+}
+
 export type PlanPhase =
   | "gathering_intent"
   | "collecting_constraints"
@@ -133,6 +192,7 @@ export interface Plan {
   interestedMembers: MemberId[];
   options: PlanOption[];
   expectedInputs: ExpectedInput[];
+  collections: Collection[];
   routes: PlanRoute[];
   decision?: Decision;
   commitments: Commitment[];

@@ -1,7 +1,11 @@
 import type {
   Commitment,
+  Collection,
+  CollectionKind,
   Constraint,
+  ConstraintScope,
   ConstraintType,
+  CreateCollectionInput,
   Decision,
   ExpectedInput,
   Group,
@@ -116,6 +120,7 @@ export function createPlan(groupId: GroupId, description: string): Plan {
     interestedMembers: [],
     options: [],
     expectedInputs: [],
+    collections: [],
     routes: [],
     commitments: [],
     createdAt: new Date().toISOString(),
@@ -182,6 +187,142 @@ export function addPlanRoute(
   return route;
 }
 
+export function createCollection(
+  groupId: GroupId,
+  planId: PlanId,
+  input: CreateCollectionInput
+): Collection | undefined {
+  const store = groups.get(groupId);
+  const plan = store?.plans.get(planId);
+  if (!store || !plan) return undefined;
+
+  const now = new Date().toISOString();
+  const targetMemberIds = input.targetMemberIds ?? store.group.members.map((member) => member.id);
+  const collection: Collection = {
+    id: randomUUID(),
+    groupId,
+    planId,
+    kind: input.kind,
+    prompt: input.prompt,
+    status: "open",
+    visibility: input.visibility ?? "public",
+    decisionRule: input.decisionRule,
+    deadline: input.deadline,
+    participants: targetMemberIds.map((memberId) => ({ memberId, status: "pending" })),
+    responses: [],
+    options: input.options,
+    transportRef: input.transportRef,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  plan.collections.push(collection);
+  plan.updatedAt = now;
+  if (collection.transportRef) {
+    addRouteForTransportRef(groupId, planId, collection.transportRef);
+  }
+  appendGroupEvent(groupId, {
+    type: "collection.created",
+    planId,
+    summary: `Collection opened: ${input.kind}`,
+    payload: { collection },
+  });
+  return collection;
+}
+
+export function getCollection(
+  groupId: GroupId,
+  planId: PlanId,
+  collectionId: string
+): Collection | undefined {
+  return groups.get(groupId)?.plans.get(planId)?.collections.find((collection) => collection.id === collectionId);
+}
+
+export function getOpenCollections(groupId: GroupId, planId: PlanId, kind?: CollectionKind): Collection[] {
+  const collections = groups.get(groupId)?.plans.get(planId)?.collections ?? [];
+  return collections.filter((collection) => collection.status === "open" && (!kind || collection.kind === kind));
+}
+
+export function linkCollectionTransportRef(
+  groupId: GroupId,
+  planId: PlanId,
+  collectionId: string,
+  kind: "message" | "poll" | "card",
+  id: string
+): void {
+  const collection = getCollection(groupId, planId, collectionId);
+  if (!collection) return;
+  collection.transportRef = { kind, id };
+  collection.updatedAt = new Date().toISOString();
+  addRouteForTransportRef(groupId, planId, collection.transportRef);
+}
+
+export function recordCollectionResponse(
+  groupId: GroupId,
+  planId: PlanId,
+  collectionId: string,
+  memberId: MemberId,
+  value: string,
+  sourceMessageId?: MessageId,
+  scope: ConstraintScope = "shared"
+): void {
+  const collection = getCollection(groupId, planId, collectionId);
+  if (!collection || collection.status !== "open") return;
+
+  const now = new Date().toISOString();
+  const existing = collection.responses.find((response) => response.memberId === memberId);
+  if (existing) {
+    existing.value = value;
+    existing.scope = scope;
+    existing.capturedAt = now;
+    existing.sourceMessageId = sourceMessageId;
+  } else {
+    collection.responses.push({
+      id: randomUUID(),
+      memberId,
+      value,
+      scope,
+      capturedAt: now,
+      sourceMessageId,
+    });
+  }
+
+  const participant = collection.participants.find((candidate) => candidate.memberId === memberId);
+  if (participant) {
+    participant.status = "responded";
+    participant.respondedAt = now;
+  } else {
+    collection.participants.push({ memberId, status: "responded", respondedAt: now });
+  }
+
+  collection.updatedAt = now;
+  groups.get(groupId)!.plans.get(planId)!.updatedAt = now;
+  appendGroupEvent(groupId, {
+    type: "collection.response_recorded",
+    actorId: memberId,
+    planId,
+    messageId: sourceMessageId,
+    summary: `Collection response recorded: ${collection.kind}`,
+    payload: { collectionId, memberId, scope },
+  });
+}
+
+export function closeCollection(groupId: GroupId, planId: PlanId, collectionId: string): void {
+  const collection = getCollection(groupId, planId, collectionId);
+  if (!collection || collection.status !== "open") return;
+
+  const now = new Date().toISOString();
+  collection.status = "closed";
+  collection.updatedAt = now;
+  groups.get(groupId)!.plans.get(planId)!.updatedAt = now;
+  appendGroupEvent(groupId, {
+    type: "collection.closed",
+    planId,
+    summary: `Collection closed: ${collection.kind}`,
+    payload: { collectionId },
+  });
+}
+
 function isOpenPlan(plan: Plan): boolean {
   return plan.phase !== "decided" && plan.phase !== "complete";
 }
@@ -233,6 +374,29 @@ function addPlanRouteInternal(
   return route;
 }
 
+function addRouteForTransportRef(
+  groupId: GroupId,
+  planId: PlanId,
+  transportRef: { kind: "message" | "poll" | "card"; id: string }
+): void {
+  addPlanRoute(groupId, planId, transportRef.kind, transportRef.id);
+}
+
+function findPollCollection(plan: Plan, pollId?: string): Collection | undefined {
+  if (pollId) {
+    const linked = plan.collections.find(
+      (collection) =>
+        collection.kind === "poll" &&
+        collection.status === "open" &&
+        collection.transportRef?.kind === "poll" &&
+        collection.transportRef.id === pollId
+    );
+    if (linked) return linked;
+  }
+
+  return plan.collections.find((collection) => collection.kind === "poll" && collection.status === "open");
+}
+
 export function updatePlanPhase(groupId: GroupId, planId: PlanId, phase: PlanPhase): void {
   const plan = groups.get(groupId)?.plans.get(planId);
   if (plan) {
@@ -265,6 +429,12 @@ export function setOpenConstraintInput(
   for (const input of plan.expectedInputs) {
     if (input.status === "open") input.status = "cancelled";
   }
+  for (const collection of plan.collections) {
+    if (collection.kind === "constraint" && collection.status === "open") {
+      collection.status = "cancelled";
+      collection.updatedAt = new Date().toISOString();
+    }
+  }
 
   const input: ExpectedInput = {
     id: randomUUID(),
@@ -284,6 +454,12 @@ export function setOpenConstraintInput(
     messageId: requestedByMessageId,
     summary: `Waiting for ${constraintType}`,
     payload: { inputId: input.id, constraintType, prompt },
+  });
+  createCollection(groupId, planId, {
+    kind: "constraint",
+    prompt,
+    visibility: "public",
+    transportRef: { kind: "message", id: requestedByMessageId },
   });
   return input;
 }
@@ -369,13 +545,37 @@ export function setPlanOptions(groupId: GroupId, planId: PlanId, options: PlanOp
   }
 }
 
-export function recordVote(groupId: GroupId, planId: PlanId, optionId: string, memberId: MemberId): void {
+export function recordVote(
+  groupId: GroupId,
+  planId: PlanId,
+  optionId: string,
+  memberId: MemberId,
+  pollId?: string
+): void {
   const plan = groups.get(groupId)?.plans.get(planId);
   if (!plan) return;
   const option = plan.options.find((o) => o.id === optionId);
-  if (option && !option.votes.includes(memberId)) {
+  if (option) {
+    for (const candidate of plan.options) {
+      candidate.votes = candidate.votes.filter((vote) => vote !== memberId);
+    }
     option.votes.push(memberId);
     plan.updatedAt = new Date().toISOString();
+
+    const pollCollection = findPollCollection(plan, pollId);
+    if (pollCollection) {
+      recordCollectionResponse(groupId, planId, pollCollection.id, memberId, optionId);
+    }
+    if (pollId) {
+      addPlanRoute(groupId, planId, "poll", pollId);
+    }
+    appendGroupEvent(groupId, {
+      type: "poll.vote_recorded",
+      actorId: memberId,
+      planId,
+      summary: `Vote recorded: ${optionId}`,
+      payload: { optionId, pollId },
+    });
   }
 }
 
@@ -462,6 +662,12 @@ export const memoryRepository: CoordinationRepository = {
   getPlan,
   getRoutablePlan,
   addPlanRoute,
+  createCollection,
+  getCollection,
+  getOpenCollections,
+  linkCollectionTransportRef,
+  recordCollectionResponse,
+  closeCollection,
   updatePlanPhase,
   getOpenExpectedInput,
   setOpenConstraintInput,

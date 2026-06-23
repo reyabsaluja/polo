@@ -6,10 +6,13 @@ import { handleMessage, handleTransportEvent } from "../src/plan/orchestrator.js
 import { resetParticipation, setParticipation } from "../src/governor/participation.js";
 import {
   addConstraint,
+  createCollection,
   createGroup,
   createPlan,
   getActivePlan,
+  getCollection,
   getGroupEvents,
+  getOpenCollections,
   getPrivateContexts,
   getPlan,
   recordDecision,
@@ -103,6 +106,25 @@ test("Polo handles the direct answer to its missing-info question", async () => 
   assert.ok(response, "Polo should respond when the group answers its budget question");
   assert.ok(plan?.constraints.some((constraint) => constraint.type === "budget" && constraint.value === "under $50"));
   assert.match(response.text, /find some options/i);
+});
+
+test("missing-info questions open collection state", async () => {
+  const { groupId, transport } = setup();
+  await seedDinnerPlan(groupId, transport);
+
+  const plan = getActivePlan(groupId);
+  assert.ok(plan);
+
+  const collections = getOpenCollections(groupId, plan.id, "constraint");
+  assert.equal(collections.length, 1);
+  assert.equal(collections[0]?.visibility, "public");
+  assert.match(collections[0]?.prompt ?? "", /budget/i);
+  assert.deepEqual(collections[0]?.participants.map((participant) => participant.status), [
+    "pending",
+    "pending",
+    "pending",
+    "pending",
+  ]);
 });
 
 test("Polo stays quiet when casual chat merely repeats a plan keyword", async () => {
@@ -277,6 +299,14 @@ test("inbound poll vote events update the target plan option", async () => {
     { id: "ramen", label: "Ramen", details: "Kumo", votes: [] },
     { id: "thai", label: "Thai", details: "Som Saa", votes: [] },
   ]);
+  const collection = createCollection(groupId, plan.id, {
+    kind: "poll",
+    prompt: "Dinner?",
+    targetMemberIds: ["maya", "sam"],
+    transportRef: { kind: "poll", id: "poll-1" },
+  });
+
+  assert.ok(collection);
 
   await handleTransportEvent(
     {
@@ -292,6 +322,22 @@ test("inbound poll vote events update the target plan option", async () => {
     },
     transport
   );
+  await handleTransportEvent(
+    {
+      kind: "poll_vote",
+      vote: {
+        groupId,
+        pollId: "poll-1",
+        planId: plan.id,
+        optionId: "thai",
+        optionIndex: 1,
+        voterId: "maya",
+      },
+    },
+    transport
+  );
 
-  assert.deepEqual(getPlan(groupId, plan.id)?.options[0]?.votes, ["maya"]);
+  assert.deepEqual(getPlan(groupId, plan.id)?.options[0]?.votes, []);
+  assert.deepEqual(getPlan(groupId, plan.id)?.options[1]?.votes, ["maya"]);
+  assert.deepEqual(getCollection(groupId, plan.id, collection.id)?.responses.map((response) => response.value), ["thai"]);
 });

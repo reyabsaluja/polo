@@ -28,7 +28,13 @@ export async function handleTransportEvent(
     case "message":
       return handleMessage(event.message, transport);
     case "poll_vote":
-      memoryRepository.recordVote(event.vote.groupId, event.vote.planId, event.vote.optionId, event.vote.voterId);
+      memoryRepository.recordVote(
+        event.vote.groupId,
+        event.vote.planId,
+        event.vote.optionId,
+        event.vote.voterId,
+        event.vote.pollId
+      );
       return null;
     case "reaction":
       return null;
@@ -67,17 +73,31 @@ export async function handleMessage(message: Message, transport: Transport): Pro
   }
 
   if (participation.state === "waiting" && activePlan && expectedInput) {
-    const satisfied = extraction.constraints.some(
+    const satisfiedConstraint = extraction.constraints.find(
       (constraint) =>
         constraint.type === expectedInput.constraintType && constraint.source === message.senderId
     );
+    const satisfied = Boolean(satisfiedConstraint);
 
     if (!satisfied && !message.mentionsPolo) {
       return null;
     }
 
-    if (satisfied) {
+    if (satisfied && satisfiedConstraint) {
       memoryRepository.satisfyExpectedInput(message.groupId, activePlan.id, expectedInput.id, message.id);
+      const collection = memoryRepository.getOpenCollections(message.groupId, activePlan.id, "constraint")[0];
+      if (collection) {
+        memoryRepository.recordCollectionResponse(
+          message.groupId,
+          activePlan.id,
+          collection.id,
+          message.senderId,
+          satisfiedConstraint.value,
+          message.id,
+          satisfiedConstraint.scope
+        );
+        memoryRepository.closeCollection(message.groupId, activePlan.id, collection.id);
+      }
     }
   }
 
