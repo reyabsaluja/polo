@@ -296,7 +296,8 @@ function recordCollectionResponse(
   }
 
   collection.updatedAt = now;
-  groups.get(groupId)!.plans.get(planId)!.updatedAt = now;
+  const plan = groups.get(groupId)?.plans.get(planId);
+  if (plan) plan.updatedAt = now;
   appendGroupEvent(groupId, {
     type: "collection.response_recorded",
     actorId: memberId,
@@ -314,7 +315,8 @@ function closeCollection(groupId: GroupId, planId: PlanId, collectionId: string)
   const now = new Date().toISOString();
   collection.status = "closed";
   collection.updatedAt = now;
-  groups.get(groupId)!.plans.get(planId)!.updatedAt = now;
+  const plan = groups.get(groupId)?.plans.get(planId);
+  if (plan) plan.updatedAt = now;
   appendGroupEvent(groupId, {
     type: "collection.closed",
     planId,
