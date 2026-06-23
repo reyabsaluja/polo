@@ -1,4 +1,5 @@
-import type { GroupId, Message, Plan } from "../domain/types.js";
+import type { GroupId, Message, Plan, PlanId } from "../domain/types.js";
+import type { ParticipationRepository } from "../store/repository.js";
 
 export type ParticipationState =
   | "dormant"
@@ -11,7 +12,7 @@ export type ParticipationState =
 export interface GroupParticipation {
   groupId: GroupId;
   state: ParticipationState;
-  activePlanId?: string;
+  activePlanId?: PlanId;
 }
 
 const participationStates = new Map<GroupId, GroupParticipation>();
@@ -25,7 +26,7 @@ export function getParticipation(groupId: GroupId): GroupParticipation {
   return initial;
 }
 
-export function setParticipation(groupId: GroupId, state: ParticipationState, activePlanId?: string): void {
+export function setParticipation(groupId: GroupId, state: ParticipationState, activePlanId?: PlanId): void {
   participationStates.set(groupId, { groupId, state, activePlanId });
 }
 
@@ -82,3 +83,9 @@ function extractPlanTerms(plan: Plan): string[] {
   }
   return terms;
 }
+
+export const participationRepository: ParticipationRepository = {
+  getParticipation,
+  setParticipation,
+  resetParticipation,
+};

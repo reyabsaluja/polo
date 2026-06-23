@@ -19,6 +19,7 @@ import type {
 } from "../domain/types.js";
 import { randomUUID } from "crypto";
 import { messageScope } from "../privacy/context.js";
+import type { CoordinationRepository } from "./repository.js";
 
 interface GroupStore {
   group: Group;
@@ -369,3 +370,31 @@ function appendGroupEvent(
   store.events.push(storedEvent);
   return storedEvent;
 }
+
+export const memoryRepository: CoordinationRepository = {
+  createGroup,
+  resetMemory,
+  getGroup,
+  getMember,
+  storeMessage,
+  getRecentMessages,
+  getPrivateContexts,
+  createPlan,
+  getActivePlan,
+  getPlan,
+  getRoutablePlan,
+  updatePlanPhase,
+  getOpenExpectedInput,
+  setOpenConstraintInput,
+  satisfyExpectedInput,
+  addConstraint,
+  addInterestedMember,
+  setPlanOptions,
+  recordVote,
+  recordDecision,
+  addCommitment,
+  saveSharedMemory,
+  getSharedMemory,
+  recordOutgoingMessage,
+  getGroupEvents,
+};

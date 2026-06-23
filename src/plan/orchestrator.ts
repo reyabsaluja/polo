@@ -3,23 +3,9 @@ import { isMockMode } from "../ai/client.js";
 import { extractConstraints } from "../ai/extract-constraints.js";
 import { generateResponse } from "../ai/generate-response.js";
 import { mockExtractConstraints, mockGenerateResponse } from "../ai/mock.js";
-import { getParticipation, shouldRespond, setParticipation } from "../governor/participation.js";
+import { participationRepository, shouldRespond } from "../governor/participation.js";
 import { isGroupSafeMessage } from "../privacy/context.js";
-import {
-  getGroup,
-  getRoutablePlan,
-  createPlan,
-  storeMessage,
-  getRecentMessages,
-  addConstraint,
-  addInterestedMember,
-  updatePlanPhase,
-  getOpenExpectedInput,
-  satisfyExpectedInput,
-  setOpenConstraintInput,
-  recordOutgoingMessage,
-  recordVote,
-} from "../store/memory.js";
+import { memoryRepository } from "../store/memory.js";
 import type { InboundTransportEvent, Transport } from "../transport/types.js";
 
 export interface PoloResponse {
@@ -42,7 +28,7 @@ export async function handleTransportEvent(
     case "message":
       return handleMessage(event.message, transport);
     case "poll_vote":
-      recordVote(event.vote.groupId, event.vote.planId, event.vote.optionId, event.vote.voterId);
+      memoryRepository.recordVote(event.vote.groupId, event.vote.planId, event.vote.optionId, event.vote.voterId);
       return null;
     case "reaction":
       return null;
@@ -50,25 +36,25 @@ export async function handleTransportEvent(
 }
 
 export async function handleMessage(message: Message, transport: Transport): Promise<PoloResponse | null> {
-  const wasStored = storeMessage(message);
+  const wasStored = memoryRepository.storeMessage(message);
   if (!wasStored) return null;
 
-  const group = getGroup(message.groupId);
+  const group = memoryRepository.getGroup(message.groupId);
   if (!group) return null;
 
   if (!isGroupSafeMessage(message)) {
     return null;
   }
 
-  const participation = getParticipation(message.groupId);
-  const activePlan = getRoutablePlan(message.groupId, participation.activePlanId);
-  const expectedInput = activePlan ? getOpenExpectedInput(message.groupId, activePlan.id) : undefined;
+  const participation = participationRepository.getParticipation(message.groupId);
+  const activePlan = memoryRepository.getRoutablePlan(message.groupId, participation.activePlanId);
+  const expectedInput = activePlan ? memoryRepository.getOpenExpectedInput(message.groupId, activePlan.id) : undefined;
 
   if (!shouldRespond(message, activePlan)) {
     return null;
   }
 
-  const recentMessages = getRecentMessages(message.groupId, 20);
+  const recentMessages = memoryRepository.getRecentMessages(message.groupId, 20);
 
   let extraction: Extraction;
   if (isMockMode()) {
@@ -88,26 +74,26 @@ export async function handleMessage(message: Message, transport: Transport): Pro
     }
 
     if (satisfied) {
-      satisfyExpectedInput(message.groupId, activePlan.id, expectedInput.id, message.id);
+      memoryRepository.satisfyExpectedInput(message.groupId, activePlan.id, expectedInput.id, message.id);
     }
   }
 
   let plan = activePlan;
   if (!plan && extraction.constraints.length > 0) {
-    plan = createPlan(message.groupId, extraction.planDescription);
-    setParticipation(message.groupId, "facilitating", plan.id);
+    plan = memoryRepository.createPlan(message.groupId, extraction.planDescription);
+    participationRepository.setParticipation(message.groupId, "facilitating", plan.id);
   }
 
   if (plan) {
     for (const constraint of extraction.constraints) {
-      addConstraint(message.groupId, plan.id, constraint);
+      memoryRepository.addConstraint(message.groupId, plan.id, constraint);
     }
     for (const memberId of extraction.interestedMembers) {
-      addInterestedMember(message.groupId, plan.id, memberId);
+      memoryRepository.addInterestedMember(message.groupId, plan.id, memberId);
     }
 
     if (plan.phase === "gathering_intent" && extraction.constraints.length > 0) {
-      updatePlanPhase(message.groupId, plan.id, "collecting_constraints");
+      memoryRepository.updatePlanPhase(message.groupId, plan.id, "collecting_constraints");
     }
   }
 
@@ -126,15 +112,15 @@ export async function handleMessage(message: Message, transport: Transport): Pro
   }
 
   await transport.send({ groupId: message.groupId, text: response });
-  recordOutgoingMessage(message.groupId, response, plan?.id, message.id);
+  memoryRepository.recordOutgoingMessage(message.groupId, response, plan?.id, message.id);
 
   if (plan) {
     const nextExpectedType = expectedConstraintType(extraction.missingInfo[0]);
     if (nextExpectedType) {
-      setOpenConstraintInput(message.groupId, plan.id, nextExpectedType, response, message.id);
-      setParticipation(message.groupId, "waiting", plan.id);
+      memoryRepository.setOpenConstraintInput(message.groupId, plan.id, nextExpectedType, response, message.id);
+      participationRepository.setParticipation(message.groupId, "waiting", plan.id);
     } else {
-      setParticipation(message.groupId, "facilitating", plan.id);
+      participationRepository.setParticipation(message.groupId, "facilitating", plan.id);
     }
   }
 
