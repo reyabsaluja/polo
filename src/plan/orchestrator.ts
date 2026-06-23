@@ -47,7 +47,10 @@ export async function handleMessage(message: Message, transport: Transport): Pro
   }
 
   const participation = participationRepository.getParticipation(message.groupId);
-  const activePlan = memoryRepository.getRoutablePlan(message.groupId, participation.activePlanId);
+  const activePlan = memoryRepository.getRoutablePlan(message.groupId, {
+    preferredPlanId: participation.activePlanId,
+    replyTo: message.replyTo,
+  });
   const expectedInput = activePlan ? memoryRepository.getOpenExpectedInput(message.groupId, activePlan.id) : undefined;
 
   if (!shouldRespond(message, activePlan)) {
@@ -81,6 +84,7 @@ export async function handleMessage(message: Message, transport: Transport): Pro
   let plan = activePlan;
   if (!plan && extraction.constraints.length > 0) {
     plan = memoryRepository.createPlan(message.groupId, extraction.planDescription);
+    memoryRepository.addPlanRoute(message.groupId, plan.id, "message", message.id, message.id);
     participationRepository.setParticipation(message.groupId, "facilitating", plan.id);
   }
 

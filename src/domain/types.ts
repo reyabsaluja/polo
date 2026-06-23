@@ -53,6 +53,7 @@ export type GroupEventType =
   | "message.received"
   | "message.sent"
   | "plan.created"
+  | "plan.route_added"
   | "plan.phase_updated"
   | "constraint.recorded"
   | "expected_input.opened"
@@ -96,6 +97,24 @@ export interface ExpectedInput {
   satisfiedByMessageId?: MessageId;
 }
 
+export type PlanRouteKind = "message" | "poll" | "card" | "thread";
+
+export interface PlanRoute {
+  id: string;
+  kind: PlanRouteKind;
+  value: string;
+  createdAt: string;
+  sourceMessageId?: MessageId;
+}
+
+export interface PlanRoutingHints {
+  preferredPlanId?: PlanId;
+  replyTo?: MessageId;
+  pollId?: string;
+  cardId?: string;
+  threadId?: string;
+}
+
 export type PlanPhase =
   | "gathering_intent"
   | "collecting_constraints"
@@ -114,6 +133,7 @@ export interface Plan {
   interestedMembers: MemberId[];
   options: PlanOption[];
   expectedInputs: ExpectedInput[];
+  routes: PlanRoute[];
   decision?: Decision;
   commitments: Commitment[];
   createdAt: string;

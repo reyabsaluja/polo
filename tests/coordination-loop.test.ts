@@ -154,6 +154,34 @@ test("the participation activePlanId routes updates to the intended open plan", 
   assert.equal(reloadedBrunch?.constraints.some((constraint) => constraint.source === "sam"), true);
 });
 
+test("reply hints route updates to the referenced plan before the active plan", async () => {
+  const { groupId, transport } = setup();
+  const dinnerMessageId = randomUUID();
+  const brunchMessageId = randomUUID();
+
+  const dinnerPlan = createPlan(groupId, "dinner on saturday");
+  updatePlanPhase(groupId, dinnerPlan.id, "collecting_constraints");
+  addConstraint(groupId, dinnerPlan.id, constraint("date", "saturday", "rey", dinnerMessageId));
+
+  const brunchPlan = createPlan(groupId, "brunch on sunday");
+  updatePlanPhase(groupId, brunchPlan.id, "collecting_constraints");
+  addConstraint(groupId, brunchPlan.id, constraint("date", "sunday", "maya", brunchMessageId));
+  setParticipation(groupId, "facilitating", brunchPlan.id);
+
+  await handleMessage(
+    {
+      ...message(groupId, "sam", "downtown works for saturday dinner"),
+      replyTo: dinnerMessageId,
+    },
+    transport
+  );
+
+  const reloadedDinner = getPlan(groupId, dinnerPlan.id);
+  const reloadedBrunch = getPlan(groupId, brunchPlan.id);
+  assert.equal(reloadedDinner?.constraints.some((candidate) => candidate.source === "sam"), true);
+  assert.equal(reloadedBrunch?.constraints.some((candidate) => candidate.source === "sam"), false);
+});
+
 test("changed constraints keep provenance instead of overwriting history", async () => {
   const { groupId, transport } = setup();
   const first = message(groupId, "rey", "Polo dinner saturday downtown");

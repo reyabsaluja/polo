@@ -15,6 +15,9 @@ import type {
   PlanId,
   PlanOption,
   PlanPhase,
+  PlanRoute,
+  PlanRouteKind,
+  PlanRoutingHints,
   PrivateContext,
 } from "../domain/types.js";
 import { randomUUID } from "crypto";
@@ -113,6 +116,7 @@ export function createPlan(groupId: GroupId, description: string): Plan {
     interestedMembers: [],
     options: [],
     expectedInputs: [],
+    routes: [],
     commitments: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -133,27 +137,100 @@ export function createPlan(groupId: GroupId, description: string): Plan {
 export function getActivePlan(groupId: GroupId): Plan | undefined {
   const store = groups.get(groupId);
   if (!store) return undefined;
-  for (const plan of store.plans.values()) {
-    if (isOpenPlan(plan)) return plan;
-  }
-  return undefined;
+  return getOpenPlansByUpdatedAt(store)[0];
 }
 
 export function getPlan(groupId: GroupId, planId: PlanId): Plan | undefined {
   return groups.get(groupId)?.plans.get(planId);
 }
 
-export function getRoutablePlan(groupId: GroupId, preferredPlanId?: PlanId): Plan | undefined {
-  if (preferredPlanId) {
-    const preferred = getPlan(groupId, preferredPlanId);
+export function getRoutablePlan(groupId: GroupId, routing?: PlanRoutingHints): Plan | undefined {
+  const store = groups.get(groupId);
+  if (!store) return undefined;
+
+  const routed = findPlanByRoute(store, routing);
+  if (routed) return routed;
+
+  if (routing?.preferredPlanId) {
+    const preferred = getPlan(groupId, routing.preferredPlanId);
     if (preferred && isOpenPlan(preferred)) return preferred;
   }
 
   return getActivePlan(groupId);
 }
 
+export function addPlanRoute(
+  groupId: GroupId,
+  planId: PlanId,
+  kind: PlanRouteKind,
+  value: string,
+  sourceMessageId?: MessageId
+): PlanRoute | undefined {
+  const plan = groups.get(groupId)?.plans.get(planId);
+  if (!plan) return undefined;
+
+  const route = addPlanRouteInternal(plan, kind, value, sourceMessageId);
+  if (!route) return undefined;
+
+  appendGroupEvent(groupId, {
+    type: "plan.route_added",
+    planId,
+    messageId: sourceMessageId,
+    summary: `Plan route added: ${kind}`,
+    payload: { route },
+  });
+  return route;
+}
+
 function isOpenPlan(plan: Plan): boolean {
   return plan.phase !== "decided" && plan.phase !== "complete";
+}
+
+function getOpenPlansByUpdatedAt(store: GroupStore): Plan[] {
+  return [...store.plans.values()]
+    .filter(isOpenPlan)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+function findPlanByRoute(store: GroupStore, routing?: PlanRoutingHints): Plan | undefined {
+  if (!routing) return undefined;
+
+  const routeValues: Array<[PlanRouteKind, string | undefined]> = [
+    ["message", routing.replyTo],
+    ["poll", routing.pollId],
+    ["card", routing.cardId],
+    ["thread", routing.threadId],
+  ];
+
+  for (const plan of getOpenPlansByUpdatedAt(store)) {
+    for (const [kind, value] of routeValues) {
+      if (value && plan.routes.some((route) => route.kind === kind && route.value === value)) {
+        return plan;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function addPlanRouteInternal(
+  plan: Plan,
+  kind: PlanRouteKind,
+  value: string,
+  sourceMessageId?: MessageId
+): PlanRoute | undefined {
+  if (plan.routes.some((route) => route.kind === kind && route.value === value)) return undefined;
+
+  const route: PlanRoute = {
+    id: randomUUID(),
+    kind,
+    value,
+    createdAt: new Date().toISOString(),
+    sourceMessageId,
+  };
+  plan.routes.push(route);
+  plan.updatedAt = new Date().toISOString();
+  return route;
 }
 
 export function updatePlanPhase(groupId: GroupId, planId: PlanId, phase: PlanPhase): void {
@@ -262,6 +339,7 @@ export function addConstraint(groupId: GroupId, planId: PlanId, constraint: Cons
         }
       }
       plan.constraints.push(constraint);
+      addPlanRoute(groupId, plan.id, "message", constraint.sourceMessageId, constraint.sourceMessageId);
       appendGroupEvent(groupId, {
         type: "constraint.recorded",
         actorId: constraint.source,
@@ -383,6 +461,7 @@ export const memoryRepository: CoordinationRepository = {
   getActivePlan,
   getPlan,
   getRoutablePlan,
+  addPlanRoute,
   updatePlanPhase,
   getOpenExpectedInput,
   setOpenConstraintInput,

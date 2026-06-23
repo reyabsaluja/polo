@@ -15,6 +15,9 @@ import type {
   PlanId,
   PlanOption,
   PlanPhase,
+  PlanRoute,
+  PlanRouteKind,
+  PlanRoutingHints,
   PrivateContext,
 } from "../domain/types.js";
 import type { GroupParticipation, ParticipationState } from "../governor/participation.js";
@@ -30,7 +33,14 @@ export interface CoordinationRepository {
   createPlan(groupId: GroupId, description: string): Plan;
   getActivePlan(groupId: GroupId): Plan | undefined;
   getPlan(groupId: GroupId, planId: PlanId): Plan | undefined;
-  getRoutablePlan(groupId: GroupId, preferredPlanId?: PlanId): Plan | undefined;
+  getRoutablePlan(groupId: GroupId, routing?: PlanRoutingHints): Plan | undefined;
+  addPlanRoute(
+    groupId: GroupId,
+    planId: PlanId,
+    kind: PlanRouteKind,
+    value: string,
+    sourceMessageId?: MessageId
+  ): PlanRoute | undefined;
   updatePlanPhase(groupId: GroupId, planId: PlanId, phase: PlanPhase): void;
   getOpenExpectedInput(groupId: GroupId, planId: PlanId): ExpectedInput | undefined;
   setOpenConstraintInput(
