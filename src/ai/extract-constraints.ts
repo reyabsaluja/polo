@@ -1,5 +1,6 @@
 import type { Constraint, Member, MemberId, Message } from "../domain/types.js";
 import { randomUUID } from "node:crypto";
+import { formatMessagesForPrompt, groupSafeMessages } from "../privacy/context.js";
 import { getClient } from "./client.js";
 
 interface ExtractionResult {
@@ -13,11 +14,8 @@ export async function extractConstraints(
   messages: Message[],
   members: Member[]
 ): Promise<ExtractionResult> {
-  const memberMap = new Map(members.map((m) => [m.id, m.name]));
-
-  const conversationText = messages
-    .map((m) => `${memberMap.get(m.senderId) ?? m.senderId} [message_id: ${m.id}]: ${m.text}`)
-    .join("\n");
+  const safeMessages = groupSafeMessages(messages);
+  const conversationText = formatMessagesForPrompt(safeMessages, members);
 
   const memberList = members.map((m) => `- ${m.name} (id: ${m.id})`).join("\n");
 
@@ -73,7 +71,7 @@ Return ONLY the JSON, no other text.`,
         type: c.type as Constraint["type"],
         value: String(c.value),
         source: String(c.source),
-        sourceMessageId: resolveSourceMessageId(c, messages),
+        sourceMessageId: resolveSourceMessageId(c, safeMessages),
         confidence: Number(c.confidence) || 0.5,
         id: randomUUID(),
         status: "active",

@@ -4,6 +4,7 @@ import { extractConstraints } from "../ai/extract-constraints.js";
 import { generateResponse } from "../ai/generate-response.js";
 import { mockExtractConstraints, mockGenerateResponse } from "../ai/mock.js";
 import { getParticipation, shouldRespond, setParticipation } from "../governor/participation.js";
+import { isGroupSafeMessage } from "../privacy/context.js";
 import {
   getGroup,
   getRoutablePlan,
@@ -36,6 +37,10 @@ export async function handleMessage(message: Message, transport: Transport): Pro
 
   const group = getGroup(message.groupId);
   if (!group) return null;
+
+  if (!isGroupSafeMessage(message)) {
+    return null;
+  }
 
   const participation = getParticipation(message.groupId);
   const activePlan = getRoutablePlan(message.groupId, participation.activePlanId);

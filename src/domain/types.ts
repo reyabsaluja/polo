@@ -35,6 +35,7 @@ export interface Message {
   replyTo?: MessageId;
   timestamp: string;
   mentionsPolo: boolean;
+  scope?: ConstraintScope;
 }
 
 export interface Constraint {

@@ -15,6 +15,7 @@ import {
   updatePlanPhase,
 } from "../src/store/memory.js";
 import type { OutgoingMessage, Transport } from "../src/transport/types.js";
+import { formatMessagesForPrompt } from "../src/privacy/context.js";
 
 const members: Member[] = [
   { id: "rey", name: "Rey" },
@@ -160,4 +161,32 @@ test("changed constraints keep provenance instead of overwriting history", async
   assert.ok(dates.some((candidate) => candidate.value === "sunday" && candidate.status === "active"));
   assert.ok(dates.some((candidate) => candidate.sourceMessageId === first.id));
   assert.ok(dates.some((candidate) => candidate.sourceMessageId === second.id));
+});
+
+test("private-scoped messages do not create a public group response", async () => {
+  const { groupId, transport } = setup();
+  const privateMessage = {
+    ...message(groupId, "maya", "Polo I can only do this if budget is under 20"),
+    scope: "private" as const,
+  };
+
+  const response = await handleMessage(privateMessage, transport);
+
+  assert.equal(response, null);
+  assert.equal(transport.messages.length, 0);
+  assert.equal(getActivePlan(groupId), undefined);
+});
+
+test("prompt formatting excludes private raw message text", () => {
+  const groupId = "privacy-format";
+  const publicMessage = message(groupId, "rey", "dinner saturday");
+  const privateMessage = {
+    ...message(groupId, "maya", "secret medical constraint"),
+    scope: "private" as const,
+  };
+
+  const promptText = formatMessagesForPrompt([publicMessage, privateMessage], members);
+
+  assert.match(promptText, /dinner saturday/);
+  assert.doesNotMatch(promptText, /secret medical constraint/);
 });

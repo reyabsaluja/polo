@@ -1,4 +1,5 @@
 import type { Constraint, Group, Member, Message, Plan } from "../domain/types.js";
+import { formatConstraintsForPrompt, formatMessagesForPrompt, formatTriggerForPrompt } from "../privacy/context.js";
 import { getClient } from "./client.js";
 
 interface ResponseContext {
@@ -16,14 +17,10 @@ export async function generateResponse(context: ResponseContext): Promise<string
   const memberMap = new Map(group.members.map((m: Member) => [m.id, m.name]));
   const senderName = memberMap.get(triggerMessage.senderId) ?? "someone";
 
-  const conversationText = recentMessages
-    .map((m) => `${memberMap.get(m.senderId) ?? m.senderId}: ${m.text}`)
-    .join("\n");
+  const conversationText = formatMessagesForPrompt(recentMessages, group.members);
 
   const constraintSummary = extractedConstraints?.length
-    ? extractedConstraints
-        .map((c) => `- ${c.type}: ${c.value} (from ${memberMap.get(c.source) ?? c.source})`)
-        .join("\n")
+    ? formatConstraintsForPrompt(extractedConstraints, group.members)
     : "None extracted yet.";
 
   const missingInfoText = missingInfo?.length
@@ -66,7 +63,7 @@ ${constraintSummary}
 
 Key missing info: ${missingInfoText}
 
-${senderName} triggered me with: "${triggerMessage.text}"
+${senderName} triggered me with: "${formatTriggerForPrompt(triggerMessage)}"
 
 Generate my response. Keep it to 1-3 sentences. Be warm but efficient.`,
       },
