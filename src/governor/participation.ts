@@ -32,12 +32,16 @@ function resetParticipation(): void {
   participationStates.clear();
 }
 
-export function shouldRespond(message: Message, activePlan: Plan | undefined): boolean {
-  const participation = getParticipation(message.groupId);
+export function shouldRespond(
+  message: Message,
+  activePlan: Plan | undefined,
+  participation?: GroupParticipation
+): boolean {
+  const state = participation ?? getParticipation(message.groupId);
 
   if (message.mentionsPolo) return true;
 
-  switch (participation.state) {
+  switch (state.state) {
     case "mention_only":
       return false;
     case "facilitating":
