@@ -38,6 +38,29 @@ export interface Message {
   scope?: ConstraintScope;
 }
 
+export type GroupEventType =
+  | "message.received"
+  | "message.sent"
+  | "plan.created"
+  | "plan.phase_updated"
+  | "constraint.recorded"
+  | "expected_input.opened"
+  | "expected_input.satisfied"
+  | "decision.recorded"
+  | "commitment.recorded";
+
+export interface GroupEvent {
+  id: string;
+  groupId: GroupId;
+  type: GroupEventType;
+  occurredAt: string;
+  actorId?: MemberId;
+  planId?: PlanId;
+  messageId?: MessageId;
+  summary: string;
+  payload: Record<string, unknown>;
+}
+
 export interface Constraint {
   id: string;
   type: ConstraintType;

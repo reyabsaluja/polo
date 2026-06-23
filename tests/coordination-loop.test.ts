@@ -9,6 +9,7 @@ import {
   createGroup,
   createPlan,
   getActivePlan,
+  getGroupEvents,
   getPlan,
   recordDecision,
   resetMemory,
@@ -189,4 +190,28 @@ test("prompt formatting excludes private raw message text", () => {
 
   assert.match(promptText, /dinner saturday/);
   assert.doesNotMatch(promptText, /secret medical constraint/);
+});
+
+test("duplicate inbound message ids are idempotent", async () => {
+  const { groupId, transport } = setup();
+  const inbound = message(groupId, "rey", "Polo dinner saturday downtown");
+
+  const first = await handleMessage(inbound, transport);
+  const duplicate = await handleMessage(inbound, transport);
+
+  assert.ok(first);
+  assert.equal(duplicate, null);
+  assert.equal(transport.messages.length, 1);
+});
+
+test("group event ledger records core coordination actions", async () => {
+  const { groupId, transport } = setup();
+  await handleMessage(message(groupId, "rey", "Polo dinner saturday downtown"), transport);
+
+  const eventTypes = getGroupEvents(groupId).map((event) => event.type);
+
+  assert.ok(eventTypes.includes("message.received"));
+  assert.ok(eventTypes.includes("plan.created"));
+  assert.ok(eventTypes.includes("constraint.recorded"));
+  assert.ok(eventTypes.includes("message.sent"));
 });

@@ -17,6 +17,7 @@ import {
   getOpenExpectedInput,
   satisfyExpectedInput,
   setOpenConstraintInput,
+  recordOutgoingMessage,
 } from "../store/memory.js";
 import type { Transport } from "../transport/types.js";
 
@@ -33,7 +34,8 @@ interface Extraction {
 }
 
 export async function handleMessage(message: Message, transport: Transport): Promise<PoloResponse | null> {
-  storeMessage(message);
+  const wasStored = storeMessage(message);
+  if (!wasStored) return null;
 
   const group = getGroup(message.groupId);
   if (!group) return null;
@@ -108,6 +110,7 @@ export async function handleMessage(message: Message, transport: Transport): Pro
   }
 
   await transport.send({ groupId: message.groupId, text: response });
+  recordOutgoingMessage(message.groupId, response, plan?.id, message.id);
 
   if (plan) {
     const nextExpectedType = expectedConstraintType(extraction.missingInfo[0]);

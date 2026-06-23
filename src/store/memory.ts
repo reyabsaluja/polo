@@ -5,6 +5,7 @@ import type {
   Decision,
   ExpectedInput,
   Group,
+  GroupEvent,
   GroupId,
   Member,
   MemberId,
@@ -21,6 +22,8 @@ interface GroupStore {
   group: Group;
   plans: Map<PlanId, Plan>;
   messages: Message[];
+  messageIds: Set<MessageId>;
+  events: GroupEvent[];
   sharedMemory: Map<string, string>;
 }
 
@@ -28,7 +31,14 @@ const groups = new Map<GroupId, GroupStore>();
 
 export function createGroup(id: GroupId, name: string, members: Member[]): Group {
   const group: Group = { id, name, members, createdAt: new Date().toISOString() };
-  groups.set(id, { group, plans: new Map(), messages: [], sharedMemory: new Map() });
+  groups.set(id, {
+    group,
+    plans: new Map(),
+    messages: [],
+    messageIds: new Set(),
+    events: [],
+    sharedMemory: new Map(),
+  });
   return group;
 }
 
@@ -44,9 +54,21 @@ export function getMember(groupId: GroupId, memberId: MemberId): Member | undefi
   return groups.get(groupId)?.group.members.find((m) => m.id === memberId);
 }
 
-export function storeMessage(message: Message): void {
+export function storeMessage(message: Message): boolean {
   const store = groups.get(message.groupId);
-  if (store) store.messages.push(message);
+  if (!store) return false;
+  if (store.messageIds.has(message.id)) return false;
+
+  store.messageIds.add(message.id);
+  store.messages.push(message);
+  appendGroupEvent(message.groupId, {
+    type: "message.received",
+    actorId: message.senderId,
+    messageId: message.id,
+    summary: "Message received",
+    payload: { text: message.text, scope: message.scope ?? "shared" },
+  });
+  return true;
 }
 
 export function getRecentMessages(groupId: GroupId, count: number): Message[] {
@@ -70,7 +92,15 @@ export function createPlan(groupId: GroupId, description: string): Plan {
     updatedAt: new Date().toISOString(),
   };
   const store = groups.get(groupId);
-  if (store) store.plans.set(plan.id, plan);
+  if (store) {
+    store.plans.set(plan.id, plan);
+    appendGroupEvent(groupId, {
+      type: "plan.created",
+      planId: plan.id,
+      summary: `Plan created: ${description}`,
+      payload: { description },
+    });
+  }
   return plan;
 }
 
@@ -105,6 +135,12 @@ export function updatePlanPhase(groupId: GroupId, planId: PlanId, phase: PlanPha
   if (plan) {
     plan.phase = phase;
     plan.updatedAt = new Date().toISOString();
+    appendGroupEvent(groupId, {
+      type: "plan.phase_updated",
+      planId,
+      summary: `Plan phase updated to ${phase}`,
+      payload: { phase },
+    });
   }
 }
 
@@ -139,6 +175,13 @@ export function setOpenConstraintInput(
 
   plan.expectedInputs.push(input);
   plan.updatedAt = new Date().toISOString();
+  appendGroupEvent(groupId, {
+    type: "expected_input.opened",
+    planId,
+    messageId: requestedByMessageId,
+    summary: `Waiting for ${constraintType}`,
+    payload: { inputId: input.id, constraintType, prompt },
+  });
   return input;
 }
 
@@ -155,6 +198,13 @@ export function satisfyExpectedInput(
   input.status = "satisfied";
   input.satisfiedByMessageId = messageId;
   plan.updatedAt = new Date().toISOString();
+  appendGroupEvent(groupId, {
+    type: "expected_input.satisfied",
+    planId,
+    messageId,
+    summary: `Expected ${input.constraintType} input satisfied`,
+    payload: { inputId, constraintType: input.constraintType },
+  });
 }
 
 export function addConstraint(groupId: GroupId, planId: PlanId, constraint: Constraint): void {
@@ -186,6 +236,14 @@ export function addConstraint(groupId: GroupId, planId: PlanId, constraint: Cons
         }
       }
       plan.constraints.push(constraint);
+      appendGroupEvent(groupId, {
+        type: "constraint.recorded",
+        actorId: constraint.source,
+        planId,
+        messageId: constraint.sourceMessageId,
+        summary: `Constraint recorded: ${constraint.type}=${constraint.value}`,
+        payload: { constraint },
+      });
     }
     plan.updatedAt = new Date().toISOString();
   }
@@ -223,6 +281,12 @@ export function recordDecision(groupId: GroupId, planId: PlanId, decision: Decis
     plan.decision = decision;
     plan.phase = "decided";
     plan.updatedAt = new Date().toISOString();
+    appendGroupEvent(groupId, {
+      type: "decision.recorded",
+      planId,
+      summary: decision.summary,
+      payload: { decision },
+    });
   }
 }
 
@@ -231,6 +295,13 @@ export function addCommitment(groupId: GroupId, planId: PlanId, commitment: Comm
   if (plan) {
     plan.commitments.push(commitment);
     plan.updatedAt = new Date().toISOString();
+    appendGroupEvent(groupId, {
+      type: "commitment.recorded",
+      actorId: commitment.memberId,
+      planId,
+      summary: commitment.action,
+      payload: { commitment },
+    });
   }
 }
 
@@ -241,4 +312,35 @@ export function saveSharedMemory(groupId: GroupId, key: string, value: string): 
 
 export function getSharedMemory(groupId: GroupId, key: string): string | undefined {
   return groups.get(groupId)?.sharedMemory.get(key);
+}
+
+export function recordOutgoingMessage(groupId: GroupId, text: string, planId?: PlanId, messageId?: MessageId): void {
+  appendGroupEvent(groupId, {
+    type: "message.sent",
+    planId,
+    messageId,
+    summary: "Polo sent a group message",
+    payload: { text },
+  });
+}
+
+export function getGroupEvents(groupId: GroupId): GroupEvent[] {
+  return [...(groups.get(groupId)?.events ?? [])];
+}
+
+function appendGroupEvent(
+  groupId: GroupId,
+  event: Omit<GroupEvent, "id" | "groupId" | "occurredAt">
+): GroupEvent | undefined {
+  const store = groups.get(groupId);
+  if (!store) return undefined;
+
+  const storedEvent: GroupEvent = {
+    id: randomUUID(),
+    groupId,
+    occurredAt: new Date().toISOString(),
+    ...event,
+  };
+  store.events.push(storedEvent);
+  return storedEvent;
 }
