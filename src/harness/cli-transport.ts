@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   OutgoingCard,
   OutgoingMessage,
@@ -32,7 +33,7 @@ export class CliTransport implements Transport {
     if (poll.deadline) {
       console.log(`${DIM}  Deadline: ${poll.deadline}${RESET}`);
     }
-    return `poll_${Date.now()}`;
+    return `poll_${randomUUID()}`;
   }
 
   async sendPrivate(message: OutgoingPrivateMessage): Promise<void> {
@@ -44,7 +45,7 @@ export class CliTransport implements Transport {
     if (card.body) console.log(`  ${card.body}`);
     card.fields?.forEach((field) => console.log(`  ${field.label}: ${field.value}`));
     card.actions?.forEach((action) => console.log(`  [${action.id}] ${action.label}`));
-    return `card_${Date.now()}`;
+    return `card_${randomUUID()}`;
   }
 }
 
