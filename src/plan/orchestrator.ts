@@ -7,7 +7,7 @@ import { mockExtractConstraints, mockGenerateResponse } from "../ai/mock.js";
 import { participationRepository, shouldRespond } from "../governor/participation.js";
 import { isGroupSafeMessage } from "../privacy/context.js";
 import { memoryRepository } from "../store/memory.js";
-import type { InboundTransportEvent, Transport } from "../transport/types.js";
+import type { InboundTransportEvent, PrivateInboundMessage, Transport } from "../transport/types.js";
 import { advancePlan } from "./advance.js";
 import { closePollAndDecide, shouldClosePoll, startPoll } from "./poll.js";
 
@@ -33,6 +33,8 @@ export async function handleTransportEvent(
       return handleMessage(event.message, transport);
     case "poll_vote":
       return handlePollVote(event.vote, transport);
+    case "private_message":
+      return handlePrivateMessage(event.privateMessage, transport);
     case "reaction":
       return null;
   }
@@ -220,6 +222,36 @@ async function handleFindOptions(
   advancePlan(groupId, plan.id);
   participationRepository.setParticipation(groupId, "waiting", plan.id);
   return { text: question, phaseAdvanced: true };
+}
+
+async function handlePrivateMessage(
+  pm: PrivateInboundMessage,
+  _transport: Transport
+): Promise<PoloResponse | null> {
+  const participation = participationRepository.getParticipation(pm.groupId);
+  const plan = memoryRepository.getRoutablePlan(pm.groupId, {
+    preferredPlanId: participation.activePlanId,
+  });
+  if (!plan) return null;
+
+  const openCollections = memoryRepository.getOpenCollections(pm.groupId, plan.id, "availability");
+  for (const collection of openCollections) {
+    const isParticipant = collection.participants.some((p) => p.memberId === pm.senderId);
+    if (isParticipant) {
+      memoryRepository.recordCollectionResponse(
+        pm.groupId,
+        plan.id,
+        collection.id,
+        pm.senderId,
+        pm.text,
+        pm.messageId,
+        "private"
+      );
+      return null;
+    }
+  }
+
+  return null;
 }
 
 function expectedConstraintType(missingInfo: string | undefined): ConstraintType | undefined {

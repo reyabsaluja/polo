@@ -65,10 +65,18 @@ export interface ReactionEvent {
   emoji: string;
 }
 
+export interface PrivateInboundMessage {
+  groupId: GroupId;
+  senderId: MemberId;
+  text: string;
+  messageId?: string;
+}
+
 export type InboundTransportEvent =
   | { kind: "message"; message: Message }
   | { kind: "poll_vote"; vote: PollVote }
-  | { kind: "reaction"; reaction: ReactionEvent };
+  | { kind: "reaction"; reaction: ReactionEvent }
+  | { kind: "private_message"; privateMessage: PrivateInboundMessage };
 
 export interface Transport {
   send(message: OutgoingMessage): Promise<void>;
