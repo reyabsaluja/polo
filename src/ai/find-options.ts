@@ -2,6 +2,7 @@ import type { Group, Member, Plan, PlanOption } from "../domain/types.js";
 import { randomUUID } from "node:crypto";
 import { groupSafeConstraints } from "../privacy/context.js";
 import { getClient } from "./client.js";
+import { extractJsonObject } from "./extract-constraints.js";
 
 interface OptionsResult {
   options: PlanOption[];
@@ -60,7 +61,7 @@ Return ONLY the JSON.`,
 
 function parseOptionsResponse(text: string): OptionsResult {
   try {
-    const jsonStr = extractJson(text);
+    const jsonStr = extractJsonObject(text);
     const parsed = JSON.parse(jsonStr);
 
     const options: PlanOption[] = (parsed.options ?? [])
@@ -117,11 +118,3 @@ export function mockFindOptions(plan: Plan, _group: Group): OptionsResult {
   };
 }
 
-function extractJson(text: string): string {
-  const trimmed = text.trim();
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start >= 0 && end > start) return trimmed.slice(start, end + 1);
-  return trimmed;
-}

@@ -186,7 +186,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function extractJsonObject(text: string): string {
+export function extractJsonObject(text: string): string {
   const trimmed = text.trim();
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
 
