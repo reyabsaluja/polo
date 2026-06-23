@@ -78,13 +78,26 @@ export function getActivePlan(groupId: GroupId): Plan | undefined {
   const store = groups.get(groupId);
   if (!store) return undefined;
   for (const plan of store.plans.values()) {
-    if (plan.phase !== "complete") return plan;
+    if (isOpenPlan(plan)) return plan;
   }
   return undefined;
 }
 
 export function getPlan(groupId: GroupId, planId: PlanId): Plan | undefined {
   return groups.get(groupId)?.plans.get(planId);
+}
+
+export function getRoutablePlan(groupId: GroupId, preferredPlanId?: PlanId): Plan | undefined {
+  if (preferredPlanId) {
+    const preferred = getPlan(groupId, preferredPlanId);
+    if (preferred && isOpenPlan(preferred)) return preferred;
+  }
+
+  return getActivePlan(groupId);
+}
+
+function isOpenPlan(plan: Plan): boolean {
+  return plan.phase !== "decided" && plan.phase !== "complete";
 }
 
 export function updatePlanPhase(groupId: GroupId, planId: PlanId, phase: PlanPhase): void {

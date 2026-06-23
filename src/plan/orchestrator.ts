@@ -6,7 +6,7 @@ import { mockExtractConstraints, mockGenerateResponse } from "../ai/mock.js";
 import { getParticipation, shouldRespond, setParticipation } from "../governor/participation.js";
 import {
   getGroup,
-  getActivePlan,
+  getRoutablePlan,
   createPlan,
   storeMessage,
   getRecentMessages,
@@ -37,8 +37,8 @@ export async function handleMessage(message: Message, transport: Transport): Pro
   const group = getGroup(message.groupId);
   if (!group) return null;
 
-  const activePlan = getActivePlan(message.groupId);
   const participation = getParticipation(message.groupId);
+  const activePlan = getRoutablePlan(message.groupId, participation.activePlanId);
   const expectedInput = activePlan ? getOpenExpectedInput(message.groupId, activePlan.id) : undefined;
 
   if (!shouldRespond(message, activePlan)) {
