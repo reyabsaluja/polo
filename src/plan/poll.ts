@@ -84,8 +84,9 @@ export function shouldClosePoll(
     if (winner) {
       const winnerVotes = tally.get(winner.id) ?? 0;
       const remaining = total - responded;
-      const secondPlace = [...tally.values()]
-        .filter((v) => v !== winnerVotes)
+      const secondPlace = [...tally.entries()]
+        .filter(([id]) => id !== winner.id)
+        .map(([, v]) => v)
         .sort((a, b) => b - a)[0] ?? 0;
       if (winnerVotes > secondPlace + remaining) return true;
     }
