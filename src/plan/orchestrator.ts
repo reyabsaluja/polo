@@ -1,4 +1,4 @@
-import type { Constraint, ConstraintType, MemberId, Message, Plan } from "../domain/types.js";
+import type { Constraint, ConstraintType, ExpectedInput, Group, Member, MemberId, Message, Plan } from "../domain/types.js";
 import { isMockMode } from "../ai/client.js";
 import { extractConstraints } from "../ai/extract-constraints.js";
 import { findOptions, mockFindOptions } from "../ai/find-options.js";
@@ -92,83 +92,131 @@ export async function handleMessage(message: Message, transport: Transport): Pro
   }
 
   const recentMessages = memoryRepository.getRecentMessages(message.groupId, 20);
+  const extraction = await extractFromMessages(recentMessages, group.members);
 
-  let extraction: Extraction;
+  if (!handleExpectedInput(message, participation, activePlan, expectedInput, extraction)) {
+    return null;
+  }
+
+  const plan = resolvePlan(message, activePlan, extraction);
+
+  if (plan) {
+    applyExtraction(message.groupId, plan, extraction);
+    handleCommitmentIfDecided(message, plan);
+
+    const optionsResult = await runPhaseAdvancement(message.groupId, plan, transport);
+    if (optionsResult) return optionsResult;
+  }
+
+  return await respondAndUpdateState(message, group, plan, activePlan, recentMessages, extraction, transport);
+}
+
+async function extractFromMessages(messages: Message[], members: Member[]): Promise<Extraction> {
   if (isMockMode()) {
-    extraction = mockExtractConstraints(recentMessages, group.members);
-  } else {
-    extraction = await extractConstraints(recentMessages, group.members);
+    return mockExtractConstraints(messages, members);
+  }
+  return await extractConstraints(messages, members);
+}
+
+function handleExpectedInput(
+  message: Message,
+  participation: { state: string; activePlanId?: string },
+  activePlan: Plan | undefined,
+  expectedInput: ExpectedInput | undefined,
+  extraction: Extraction
+): boolean {
+  if (participation.state !== "waiting" || !activePlan || !expectedInput) return true;
+
+  const satisfiedConstraint = extraction.constraints.find(
+    (constraint) =>
+      constraint.type === expectedInput.constraintType && constraint.source === message.senderId
+  );
+
+  if (!satisfiedConstraint && !message.mentionsPolo) {
+    return false;
   }
 
-  if (participation.state === "waiting" && activePlan && expectedInput) {
-    const satisfiedConstraint = extraction.constraints.find(
-      (constraint) =>
-        constraint.type === expectedInput.constraintType && constraint.source === message.senderId
-    );
-    const satisfied = Boolean(satisfiedConstraint);
-
-    if (!satisfied && !message.mentionsPolo) {
-      return null;
-    }
-
-    if (satisfied && satisfiedConstraint) {
-      memoryRepository.satisfyExpectedInput(message.groupId, activePlan.id, expectedInput.id, message.id);
-      const collection = memoryRepository.getOpenCollections(message.groupId, activePlan.id, "constraint")[0];
-      if (collection) {
-        memoryRepository.recordCollectionResponse(
-          message.groupId,
-          activePlan.id,
-          collection.id,
-          message.senderId,
-          satisfiedConstraint.value,
-          message.id,
-          satisfiedConstraint.scope
-        );
-        memoryRepository.closeCollection(message.groupId, activePlan.id, collection.id);
-      }
+  if (satisfiedConstraint) {
+    memoryRepository.satisfyExpectedInput(message.groupId, activePlan.id, expectedInput.id, message.id);
+    const collection = memoryRepository.getOpenCollections(message.groupId, activePlan.id, "constraint")[0];
+    if (collection) {
+      memoryRepository.recordCollectionResponse(
+        message.groupId,
+        activePlan.id,
+        collection.id,
+        message.senderId,
+        satisfiedConstraint.value,
+        message.id,
+        satisfiedConstraint.scope
+      );
+      memoryRepository.closeCollection(message.groupId, activePlan.id, collection.id);
     }
   }
 
-  let plan = activePlan;
-  if (!plan && extraction.constraints.length > 0) {
-    plan = memoryRepository.createPlan(message.groupId, extraction.planDescription);
+  return true;
+}
+
+function resolvePlan(message: Message, activePlan: Plan | undefined, extraction: Extraction): Plan | undefined {
+  if (activePlan) return activePlan;
+
+  if (extraction.constraints.length > 0) {
+    const plan = memoryRepository.createPlan(message.groupId, extraction.planDescription);
     memoryRepository.addPlanRoute(message.groupId, plan.id, "message", message.id, message.id);
     participationRepository.setParticipation(message.groupId, "facilitating", plan.id);
+    return plan;
   }
 
-  if (plan) {
-    for (const constraint of extraction.constraints) {
-      memoryRepository.addConstraint(message.groupId, plan.id, constraint);
-    }
-    for (const memberId of extraction.interestedMembers) {
-      memoryRepository.addInterestedMember(message.groupId, plan.id, memberId);
-    }
+  return undefined;
+}
 
+function applyExtraction(groupId: string, plan: Plan, extraction: Extraction): void {
+  for (const constraint of extraction.constraints) {
+    memoryRepository.addConstraint(groupId, plan.id, constraint);
   }
-
-  if (plan && plan.phase === "decided") {
-    const commitment = detectCommitment(message);
-    if (commitment) {
-      memoryRepository.addCommitment(message.groupId, plan.id, {
-        memberId: message.senderId,
-        action: commitment,
-        completed: false,
-      });
-      advancePlan(message.groupId, plan.id);
-    }
+  for (const memberId of extraction.interestedMembers) {
+    memoryRepository.addInterestedMember(groupId, plan.id, memberId);
   }
+}
 
-  if (plan) {
-    const maxTransitions = 10;
-    let transition = advancePlan(message.groupId, plan.id);
-    for (let i = 0; transition && i < maxTransitions; i++) {
-      if (transition.to === "finding_options") {
-        return await handleFindOptions(message.groupId, plan, transport);
-      }
-      transition = advancePlan(message.groupId, plan.id);
-    }
+function handleCommitmentIfDecided(message: Message, plan: Plan): void {
+  if (plan.phase !== "decided") return;
+
+  const commitment = detectCommitment(message);
+  if (commitment) {
+    memoryRepository.addCommitment(message.groupId, plan.id, {
+      memberId: message.senderId,
+      action: commitment,
+      completed: false,
+    });
+    advancePlan(message.groupId, plan.id);
   }
+}
 
+async function runPhaseAdvancement(
+  groupId: string,
+  plan: Plan,
+  transport: Transport
+): Promise<PoloResponse | null> {
+  const maxTransitions = 10;
+  let transition = advancePlan(groupId, plan.id);
+  for (let i = 0; transition && i < maxTransitions; i++) {
+    if (transition.to === "finding_options") {
+      return await handleFindOptions(groupId, plan, transport);
+    }
+    transition = advancePlan(groupId, plan.id);
+  }
+  return null;
+}
+
+async function respondAndUpdateState(
+  message: Message,
+  group: Group,
+  plan: Plan | undefined,
+  activePlan: Plan | undefined,
+  recentMessages: Message[],
+  extraction: Extraction,
+  transport: Transport
+): Promise<PoloResponse | null> {
   let response: string;
   if (isMockMode()) {
     response = mockGenerateResponse(extraction.constraints, extraction.missingInfo, group.members);
