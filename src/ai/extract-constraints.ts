@@ -157,6 +157,14 @@ function resolveSourceMessageId(
   const claimed = String(candidate.sourceMessageId ?? "");
   if (messages.some((message) => message.id === claimed && message.senderId === source)) return claimed;
 
+  const value = String(candidate.value ?? "").toLowerCase();
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message?.senderId === source && value && message.text.toLowerCase().includes(value)) {
+      return message.id;
+    }
+  }
+
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
     if (message?.senderId === source) return message.id;
