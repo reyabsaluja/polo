@@ -115,7 +115,9 @@ export async function closePollAndDecide(
 
   const winnerVotes = tally.get(winner.id) ?? 0;
   const summary = `${winner.label} won ${winnerVotes}–${totalVotes - winnerVotes}.`;
-  const text = `${summary} ${winner.details ? winner.details + "." : ""} Who's handling the reservation?`;
+  const plan = memoryRepository.getPlan(groupId, planId);
+  const planDesc = plan?.description ?? "the plan";
+  const text = `${summary} ${winner.details ? winner.details + "." : ""} What's the next step for ${planDesc}?`;
 
   await transport.send({ groupId, text });
   memoryRepository.recordOutgoingMessage(groupId, text, planId);
