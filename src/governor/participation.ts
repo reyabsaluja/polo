@@ -58,13 +58,19 @@ export function shouldRespond(message: Message, activePlan: Plan | undefined): b
 function isRelevantToPlan(message: Message, plan: Plan | undefined): boolean {
   if (!plan) return false;
   const text = message.text.toLowerCase();
+  const repliesToPlanContext = Boolean(
+    message.replyTo && plan.routes.some((route) => route.kind === "message" && route.value === message.replyTo)
+  );
+  if (repliesToPlanContext) {
+    return hasPlanningSignal(text) || isShortPlanningAnswer(text);
+  }
+
   const planTerms = extractPlanTerms(plan);
   const mentionsPlan = planTerms.some((term) => text.includes(term));
-  if (!mentionsPlan) return false;
+  const hasOpenCollection = plan.collections.some((collection) => collection.status === "open");
+  if (!mentionsPlan && !(hasOpenCollection && hasPlanningSignal(text))) return false;
 
-  return /\b(yes|no|works|available|can't|cannot|prefer|under|\$\d+|after|before|around|at \d|vegetarian|vegan|gluten|halal|kosher)\b/i.test(
-    message.text
-  );
+  return hasPlanningSignal(text) || isShortPlanningAnswer(text);
 }
 
 function hasOpenQuestion(plan: Plan | undefined): boolean {
@@ -79,9 +85,34 @@ function extractPlanTerms(plan: Plan): string[] {
   }
   if (plan.description) {
     const words = plan.description.toLowerCase().split(/\s+/);
-    terms.push(...words.filter((w) => w.length > 3));
+    terms.push(...words.filter(isUsefulPlanTerm));
+  }
+  for (const option of plan.options) {
+    terms.push(...option.label.toLowerCase().split(/\s+/).filter(isUsefulPlanTerm));
+    terms.push(...option.details.toLowerCase().split(/\s+/).filter(isUsefulPlanTerm));
+  }
+  for (const collection of plan.collections) {
+    if (collection.status === "open") {
+      terms.push(...collection.prompt.toLowerCase().split(/\s+/).filter(isUsefulPlanTerm));
+    }
   }
   return terms;
+}
+
+function hasPlanningSignal(text: string): boolean {
+  return /\b(yes|yeah|yep|no|works|available|free|can't|cannot|can|prefer|vote|rsvp|under|\$\d+|after|before|around|at \d|\d(:\d\d)?|vegetarian|vegan|gluten|halal|kosher)\b/i.test(
+    text
+  );
+}
+
+function isShortPlanningAnswer(text: string): boolean {
+  return /^(yes|yeah|yep|no|nah|sure|works|done|in|out)$/i.test(text.trim());
+}
+
+function isUsefulPlanTerm(word: string): boolean {
+  const cleaned = word.replace(/[^a-z0-9$]/g, "");
+  if (cleaned.length <= 3) return false;
+  return !new Set(["this", "that", "with", "from", "what", "when", "where", "plan"]).has(cleaned);
 }
 
 export const participationRepository: ParticipationRepository = {

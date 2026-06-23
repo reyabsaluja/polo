@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { Constraint, ConstraintType, Member, Message } from "../src/domain/types.js";
 import { parseExtractionJson } from "../src/ai/extract-constraints.js";
+import { formatPlanContextForPrompt } from "../src/ai/generate-response.js";
 import { handleMessage, handleTransportEvent } from "../src/plan/orchestrator.js";
-import { resetParticipation, setParticipation } from "../src/governor/participation.js";
+import { resetParticipation, setParticipation, shouldRespond } from "../src/governor/participation.js";
 import {
   addConstraint,
   createCollection,
@@ -205,6 +206,21 @@ test("reply hints route updates to the referenced plan before the active plan", 
   assert.equal(reloadedBrunch?.constraints.some((candidate) => candidate.source === "sam"), false);
 });
 
+test("participation governor treats routed short planning replies as relevant", () => {
+  const { groupId } = setup();
+  const sourceMessageId = randomUUID();
+  const plan = createPlan(groupId, "dinner on saturday");
+  updatePlanPhase(groupId, plan.id, "collecting_constraints");
+  addConstraint(groupId, plan.id, constraint("date", "saturday", "rey", sourceMessageId));
+  setParticipation(groupId, "facilitating", plan.id);
+
+  assert.equal(
+    shouldRespond({ ...message(groupId, "maya", "6 works"), replyTo: sourceMessageId }, getPlan(groupId, plan.id)),
+    true
+  );
+  assert.equal(shouldRespond(message(groupId, "maya", "saturday is going to be chaos lol"), getPlan(groupId, plan.id)), false);
+});
+
 test("changed constraints keep provenance instead of overwriting history", async () => {
   const { groupId, transport } = setup();
   const first = message(groupId, "rey", "Polo dinner saturday downtown");
@@ -286,6 +302,28 @@ test("AI extraction parsing rejects invalid model output", () => {
   assert.equal(parsed.constraints[0]?.confidence, 1);
   assert.deepEqual(parsed.interestedMembers, ["rey", "maya"]);
   assert.deepEqual(parsed.missingInfo, ["time", "budget"]);
+});
+
+test("response context includes whole active plan state", () => {
+  const { groupId } = setup();
+  const plan = createPlan(groupId, "dinner on saturday");
+  addConstraint(groupId, plan.id, constraint("date", "saturday", "rey"));
+  setPlanOptions(groupId, plan.id, [
+    { id: "ramen", label: "Ramen", details: "Kumo downtown", votes: ["rey"] },
+  ]);
+  createCollection(groupId, plan.id, {
+    kind: "poll",
+    prompt: "Pick dinner",
+    targetMemberIds: ["rey", "maya"],
+    transportRef: { kind: "poll", id: "poll-2" },
+  });
+
+  const context = formatPlanContextForPrompt(plan, members);
+
+  assert.match(context, /Known constraints/);
+  assert.match(context, /date: saturday/);
+  assert.match(context, /Ramen: Kumo downtown/);
+  assert.match(context, /poll: Pick dinner \(0\/2 responded\)/);
 });
 
 test("duplicate inbound message ids are idempotent", async () => {
