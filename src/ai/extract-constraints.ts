@@ -1,14 +1,24 @@
-import type { Constraint, Member, MemberId, Message } from "../domain/types.js";
+import type { Constraint, ConstraintType, Member, MemberId, Message } from "../domain/types.js";
 import { randomUUID } from "node:crypto";
 import { formatMessagesForPrompt, groupSafeMessages } from "../privacy/context.js";
 import { getClient } from "./client.js";
 
-interface ExtractionResult {
+export interface ExtractionResult {
   constraints: Constraint[];
   planDescription: string;
   interestedMembers: MemberId[];
   missingInfo: string[];
 }
+
+const constraintTypes = new Set<ConstraintType>([
+  "date",
+  "time",
+  "location",
+  "budget",
+  "dietary",
+  "attendance",
+  "preference",
+]);
 
 export async function extractConstraints(
   messages: Message[],
@@ -63,23 +73,24 @@ Return ONLY the JSON, no other text.`,
   const text = response.content[0]?.type === "text" ? response.content[0].text : "";
   const capturedAt = new Date().toISOString();
 
+  return parseExtractionJson(text, safeMessages, members, capturedAt);
+}
+
+export function parseExtractionJson(
+  text: string,
+  safeMessages: Message[],
+  members: Member[],
+  capturedAt = new Date().toISOString()
+): ExtractionResult {
+  const memberIds = new Set(members.map((member) => member.id));
+
   try {
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(extractJsonObject(text));
     return {
-      planDescription: parsed.planDescription ?? "group plan",
-      constraints: (parsed.constraints ?? []).map((c: Record<string, unknown>) => ({
-        type: c.type as Constraint["type"],
-        value: String(c.value),
-        source: String(c.source),
-        sourceMessageId: resolveSourceMessageId(c, safeMessages),
-        confidence: Number(c.confidence) || 0.5,
-        id: randomUUID(),
-        status: "active",
-        scope: "shared",
-        capturedAt,
-      })),
-      interestedMembers: parsed.interestedMembers ?? [],
-      missingInfo: parsed.missingInfo ?? [],
+      planDescription: stringOrDefault(parsed.planDescription, "group plan"),
+      constraints: normalizeConstraints(parsed.constraints, safeMessages, memberIds, capturedAt),
+      interestedMembers: normalizeMemberIds(parsed.interestedMembers, memberIds),
+      missingInfo: normalizeStringList(parsed.missingInfo).slice(0, 2),
     };
   } catch {
     return {
@@ -91,15 +102,97 @@ Return ONLY the JSON, no other text.`,
   }
 }
 
-function resolveSourceMessageId(candidate: Record<string, unknown>, messages: Message[]): string {
-  const claimed = String(candidate.sourceMessageId ?? "");
-  if (messages.some((message) => message.id === claimed)) return claimed;
+function normalizeConstraints(
+  candidates: unknown,
+  messages: Message[],
+  memberIds: Set<MemberId>,
+  capturedAt: string
+): Constraint[] {
+  if (!Array.isArray(candidates)) return [];
 
-  const source = String(candidate.source ?? "");
+  return candidates.flatMap((candidate) => {
+    if (!isRecord(candidate)) return [];
+
+    const type = normalizeConstraintType(candidate.type);
+    const value = stringOrDefault(candidate.value, "").trim();
+    const source = stringOrDefault(candidate.source, "");
+    const sourceMessageId = resolveSourceMessageId(candidate, messages, source);
+
+    if (!type || !value || !memberIds.has(source) || !sourceMessageId) return [];
+
+    return [{
+      type,
+      value,
+      source,
+      sourceMessageId,
+      confidence: normalizeConfidence(candidate.confidence),
+      id: randomUUID(),
+      status: "active",
+      scope: "shared",
+      capturedAt,
+    }];
+  });
+}
+
+function normalizeConstraintType(value: unknown): ConstraintType | undefined {
+  if (typeof value !== "string") return undefined;
+  return constraintTypes.has(value as ConstraintType) ? value as ConstraintType : undefined;
+}
+
+function resolveSourceMessageId(
+  candidate: Record<string, unknown>,
+  messages: Message[],
+  source: MemberId
+): string | undefined {
+  const claimed = String(candidate.sourceMessageId ?? "");
+  if (messages.some((message) => message.id === claimed && message.senderId === source)) return claimed;
+
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
     if (message?.senderId === source) return message.id;
   }
 
-  return messages[messages.length - 1]?.id ?? randomUUID();
+  return undefined;
+}
+
+function normalizeMemberIds(candidates: unknown, memberIds: Set<MemberId>): MemberId[] {
+  const unique = new Set<MemberId>();
+  for (const memberId of normalizeStringList(candidates)) {
+    if (memberIds.has(memberId)) unique.add(memberId);
+  }
+  return [...unique];
+}
+
+function normalizeStringList(candidates: unknown): string[] {
+  if (!Array.isArray(candidates)) return [];
+  return candidates.flatMap((candidate) => {
+    if (typeof candidate !== "string") return [];
+    const trimmed = candidate.trim();
+    return trimmed ? [trimmed] : [];
+  });
+}
+
+function normalizeConfidence(value: unknown): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0.5;
+  return Math.max(0, Math.min(1, numeric));
+}
+
+function stringOrDefault(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function extractJsonObject(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) return trimmed;
+
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start >= 0 && end > start) return trimmed.slice(start, end + 1);
+
+  return trimmed;
 }

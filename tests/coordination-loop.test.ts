@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { Constraint, ConstraintType, Member, Message } from "../src/domain/types.js";
+import { parseExtractionJson } from "../src/ai/extract-constraints.js";
 import { handleMessage, handleTransportEvent } from "../src/plan/orchestrator.js";
 import { resetParticipation, setParticipation } from "../src/governor/participation.js";
 import {
@@ -255,6 +256,36 @@ test("prompt formatting excludes private raw message text", () => {
 
   assert.match(promptText, /dinner saturday/);
   assert.doesNotMatch(promptText, /secret medical constraint/);
+});
+
+test("AI extraction parsing rejects invalid model output", () => {
+  const groupId = "validation";
+  const reyMessage = message(groupId, "rey", "dinner under 50");
+  const mayaMessage = message(groupId, "maya", "downtown works");
+  const parsed = parseExtractionJson(
+    JSON.stringify({
+      planDescription: " dinner ",
+      constraints: [
+        { type: "budget", value: "under $50", source: "rey", sourceMessageId: "made-up", confidence: 2 },
+        { type: "mood", value: "fun", source: "rey", sourceMessageId: reyMessage.id, confidence: 0.8 },
+        { type: "location", value: "downtown", source: "ghost", sourceMessageId: mayaMessage.id, confidence: 0.8 },
+        { type: "time", value: "", source: "maya", sourceMessageId: mayaMessage.id, confidence: 0.8 },
+      ],
+      interestedMembers: ["rey", "ghost", "maya", "rey"],
+      missingInfo: ["time", 42, "budget", "extra"],
+    }),
+    [reyMessage, mayaMessage],
+    members,
+    "now"
+  );
+
+  assert.equal(parsed.planDescription, "dinner");
+  assert.equal(parsed.constraints.length, 1);
+  assert.equal(parsed.constraints[0]?.type, "budget");
+  assert.equal(parsed.constraints[0]?.sourceMessageId, reyMessage.id);
+  assert.equal(parsed.constraints[0]?.confidence, 1);
+  assert.deepEqual(parsed.interestedMembers, ["rey", "maya"]);
+  assert.deepEqual(parsed.missingInfo, ["time", "budget"]);
 });
 
 test("duplicate inbound message ids are idempotent", async () => {
