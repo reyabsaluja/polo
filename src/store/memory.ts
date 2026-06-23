@@ -324,7 +324,7 @@ export function closeCollection(groupId: GroupId, planId: PlanId, collectionId: 
 }
 
 function isOpenPlan(plan: Plan): boolean {
-  return plan.phase !== "decided" && plan.phase !== "complete";
+  return plan.phase !== "complete";
 }
 
 function getOpenPlansByUpdatedAt(store: GroupStore): Plan[] {
