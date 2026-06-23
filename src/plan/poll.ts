@@ -106,21 +106,19 @@ export async function closePollAndDecide(
 
   const { winner, tally, totalVotes } = tallyVotes(groupId, planId);
   if (!winner) {
-    await transport.send({
-      groupId,
-      text: "The poll closed but no clear winner emerged. Want to run another round or just pick one?",
-    });
+    const text = "The poll closed but no clear winner emerged. Want to run another round or just pick one?";
+    await transport.send({ groupId, text });
+    memoryRepository.recordOutgoingMessage(groupId, text, planId);
     memoryRepository.closeCollection(groupId, planId, collectionId);
     return undefined;
   }
 
   const winnerVotes = tally.get(winner.id) ?? 0;
   const summary = `${winner.label} won ${winnerVotes}–${totalVotes - winnerVotes}.`;
+  const text = `${summary} ${winner.details ? winner.details + "." : ""} Who's handling the reservation?`;
 
-  await transport.send({
-    groupId,
-    text: `${summary} ${winner.details ? winner.details + "." : ""} Who's handling the reservation?`,
-  });
+  await transport.send({ groupId, text });
+  memoryRepository.recordOutgoingMessage(groupId, text, planId);
 
   memoryRepository.closeCollection(groupId, planId, collectionId);
 

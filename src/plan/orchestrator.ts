@@ -202,6 +202,7 @@ async function handleFindOptions(
   if (result.options.length === 0) {
     const text = "I couldn't find options matching all constraints. Could you relax the budget or location?";
     await transport.send({ groupId, text });
+    memoryRepository.recordOutgoingMessage(groupId, text, plan.id);
     memoryRepository.updatePlanPhase(groupId, plan.id, "collecting_constraints");
     participationRepository.setParticipation(groupId, "facilitating", plan.id);
     return { text, phaseAdvanced: false };
@@ -214,6 +215,7 @@ async function handleFindOptions(
     options: result.options,
     targetMemberIds: plan.interestedMembers.length > 0 ? plan.interestedMembers : undefined,
   }, transport);
+  memoryRepository.recordOutgoingMessage(groupId, question, plan.id);
 
   advancePlan(groupId, plan.id);
   participationRepository.setParticipation(groupId, "waiting", plan.id);
