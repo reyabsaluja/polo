@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { Constraint, ConstraintType, Member, Message } from "../src/domain/types.js";
-import { handleMessage } from "../src/plan/orchestrator.js";
+import { handleMessage, handleTransportEvent } from "../src/plan/orchestrator.js";
 import { resetParticipation, setParticipation } from "../src/governor/participation.js";
 import {
   addConstraint,
@@ -13,9 +13,10 @@ import {
   getPlan,
   recordDecision,
   resetMemory,
+  setPlanOptions,
   updatePlanPhase,
 } from "../src/store/memory.js";
-import type { OutgoingMessage, Transport } from "../src/transport/types.js";
+import type { OutgoingCard, OutgoingMessage, OutgoingPrivateMessage, Transport } from "../src/transport/types.js";
 import { formatMessagesForPrompt } from "../src/privacy/context.js";
 
 const members: Member[] = [
@@ -36,6 +37,12 @@ class TestTransport implements Transport {
 
   async sendPoll(): Promise<string> {
     return "poll";
+  }
+
+  async sendPrivate(_message: OutgoingPrivateMessage): Promise<void> {}
+
+  async sendCard(_card: OutgoingCard): Promise<string> {
+    return "card";
   }
 }
 
@@ -214,4 +221,41 @@ test("group event ledger records core coordination actions", async () => {
   assert.ok(eventTypes.includes("plan.created"));
   assert.ok(eventTypes.includes("constraint.recorded"));
   assert.ok(eventTypes.includes("message.sent"));
+});
+
+test("inbound message transport events dispatch through the orchestrator", async () => {
+  const { groupId, transport } = setup();
+  const response = await handleTransportEvent(
+    { kind: "message", message: message(groupId, "rey", "Polo dinner saturday downtown") },
+    transport
+  );
+
+  assert.ok(response);
+  assert.equal(transport.messages.length, 1);
+});
+
+test("inbound poll vote events update the target plan option", async () => {
+  const { groupId, transport } = setup();
+  const plan = createPlan(groupId, "dinner poll");
+  setPlanOptions(groupId, plan.id, [
+    { id: "ramen", label: "Ramen", details: "Kumo", votes: [] },
+    { id: "thai", label: "Thai", details: "Som Saa", votes: [] },
+  ]);
+
+  await handleTransportEvent(
+    {
+      kind: "poll_vote",
+      vote: {
+        groupId,
+        pollId: "poll-1",
+        planId: plan.id,
+        optionId: "ramen",
+        optionIndex: 0,
+        voterId: "maya",
+      },
+    },
+    transport
+  );
+
+  assert.deepEqual(getPlan(groupId, plan.id)?.options[0]?.votes, ["maya"]);
 });

@@ -18,8 +18,9 @@ import {
   satisfyExpectedInput,
   setOpenConstraintInput,
   recordOutgoingMessage,
+  recordVote,
 } from "../store/memory.js";
-import type { Transport } from "../transport/types.js";
+import type { InboundTransportEvent, Transport } from "../transport/types.js";
 
 export interface PoloResponse {
   text: string;
@@ -31,6 +32,21 @@ interface Extraction {
   planDescription: string;
   interestedMembers: MemberId[];
   missingInfo: string[];
+}
+
+export async function handleTransportEvent(
+  event: InboundTransportEvent,
+  transport: Transport
+): Promise<PoloResponse | null> {
+  switch (event.kind) {
+    case "message":
+      return handleMessage(event.message, transport);
+    case "poll_vote":
+      recordVote(event.vote.groupId, event.vote.planId, event.vote.optionId, event.vote.voterId);
+      return null;
+    case "reaction":
+      return null;
+  }
 }
 
 export async function handleMessage(message: Message, transport: Transport): Promise<PoloResponse | null> {
