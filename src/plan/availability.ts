@@ -1,4 +1,5 @@
 import type { Collection, GroupId, MemberId, PlanId } from "../domain/types.js";
+import type { CoordinationRepository } from "../store/repository.js";
 import { memoryRepository } from "../store/memory.js";
 import type { Transport } from "../transport/types.js";
 
@@ -19,9 +20,10 @@ export async function startAvailabilityCollection(
   planId: PlanId,
   prompt: string,
   targetMemberIds: MemberId[],
-  transport: Transport
+  transport: Transport,
+  repo: CoordinationRepository = memoryRepository
 ): Promise<Collection | undefined> {
-  const collection = memoryRepository.createCollection(groupId, planId, {
+  const collection = repo.createCollection(groupId, planId, {
     kind: "availability",
     prompt,
     targetMemberIds,
@@ -52,9 +54,10 @@ export function recordAvailability(
   collectionId: string,
   memberId: MemberId,
   rawAvailability: string,
-  messageId?: string
+  messageId?: string,
+  repo: CoordinationRepository = memoryRepository
 ): void {
-  memoryRepository.recordCollectionResponse(
+  repo.recordCollectionResponse(
     groupId,
     planId,
     collectionId,
@@ -68,9 +71,10 @@ export function recordAvailability(
 export function computeSharedAvailability(
   groupId: GroupId,
   planId: PlanId,
-  collectionId: string
+  collectionId: string,
+  repo: CoordinationRepository = memoryRepository
 ): AvailabilityResult {
-  const collection = memoryRepository.getCollection(groupId, planId, collectionId);
+  const collection = repo.getCollection(groupId, planId, collectionId);
   if (!collection) {
     return { sharedSlots: [], respondedCount: 0, totalCount: 0 };
   }

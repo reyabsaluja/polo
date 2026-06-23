@@ -1,5 +1,6 @@
 import type { Collection, Decision, GroupId, MemberId, PlanId, PlanOption } from "../domain/types.js";
 import { randomUUID } from "node:crypto";
+import type { CoordinationRepository } from "../store/repository.js";
 import { memoryRepository } from "../store/memory.js";
 import type { OutgoingPollOption, Transport } from "../transport/types.js";
 
@@ -14,7 +15,8 @@ export async function startPoll(
   groupId: GroupId,
   planId: PlanId,
   config: PollConfig,
-  transport: Transport
+  transport: Transport,
+  repo: CoordinationRepository = memoryRepository
 ): Promise<Collection | undefined> {
   const pollId = await transport.sendPoll({
     groupId,
@@ -23,9 +25,9 @@ export async function startPoll(
     deadline: config.deadline,
   });
 
-  memoryRepository.setPlanOptions(groupId, planId, config.options);
+  repo.setPlanOptions(groupId, planId, config.options);
 
-  const collection = memoryRepository.createCollection(groupId, planId, {
+  const collection = repo.createCollection(groupId, planId, {
     kind: "poll",
     prompt: config.question,
     targetMemberIds: config.targetMemberIds,
@@ -41,9 +43,10 @@ export async function startPoll(
 
 export function tallyVotes(
   groupId: GroupId,
-  planId: PlanId
+  planId: PlanId,
+  repo: CoordinationRepository = memoryRepository
 ): { winner: PlanOption | undefined; tally: Map<string, number>; totalVotes: number } {
-  const plan = memoryRepository.getPlan(groupId, planId);
+  const plan = repo.getPlan(groupId, planId);
   if (!plan) return { winner: undefined, tally: new Map(), totalVotes: 0 };
 
   const tally = new Map<string, number>();
@@ -63,9 +66,10 @@ export function tallyVotes(
 export function shouldClosePoll(
   groupId: GroupId,
   planId: PlanId,
-  collectionId: string
+  collectionId: string,
+  repo: CoordinationRepository = memoryRepository
 ): boolean {
-  const collection = memoryRepository.getCollection(groupId, planId, collectionId);
+  const collection = repo.getCollection(groupId, planId, collectionId);
   if (!collection || collection.status !== "open") return false;
 
   const responded = collection.participants.filter((p) => p.status === "responded").length;
@@ -99,30 +103,31 @@ export async function closePollAndDecide(
   groupId: GroupId,
   planId: PlanId,
   collectionId: string,
-  transport: Transport
+  transport: Transport,
+  repo: CoordinationRepository = memoryRepository
 ): Promise<Decision | undefined> {
-  const collection = memoryRepository.getCollection(groupId, planId, collectionId);
+  const collection = repo.getCollection(groupId, planId, collectionId);
   if (!collection) return undefined;
 
-  const { winner, tally, totalVotes } = tallyVotes(groupId, planId);
+  const { winner, tally, totalVotes } = tallyVotes(groupId, planId, repo);
   if (!winner) {
     const text = "The poll closed but no clear winner emerged. Want to run another round or just pick one?";
     await transport.send({ groupId, text });
-    memoryRepository.recordOutgoingMessage(groupId, text, planId);
-    memoryRepository.closeCollection(groupId, planId, collectionId);
+    repo.recordOutgoingMessage(groupId, text, planId);
+    repo.closeCollection(groupId, planId, collectionId);
     return undefined;
   }
 
   const winnerVotes = tally.get(winner.id) ?? 0;
   const summary = `${winner.label} won ${winnerVotes}–${totalVotes - winnerVotes}.`;
-  const plan = memoryRepository.getPlan(groupId, planId);
+  const plan = repo.getPlan(groupId, planId);
   const planDesc = plan?.description ?? "the plan";
   const text = `${summary} ${winner.details ? winner.details + "." : ""} What's the next step for ${planDesc}?`;
 
   await transport.send({ groupId, text });
-  memoryRepository.recordOutgoingMessage(groupId, text, planId);
+  repo.recordOutgoingMessage(groupId, text, planId);
 
-  memoryRepository.closeCollection(groupId, planId, collectionId);
+  repo.closeCollection(groupId, planId, collectionId);
 
   const decision: Decision = {
     selectedOptionId: winner.id,
@@ -130,13 +135,17 @@ export async function closePollAndDecide(
     decidedAt: new Date().toISOString(),
   };
 
-  memoryRepository.recordDecision(groupId, planId, decision);
+  repo.recordDecision(groupId, planId, decision);
 
   return decision;
 }
 
-export function formatTally(groupId: GroupId, planId: PlanId): string {
-  const plan = memoryRepository.getPlan(groupId, planId);
+export function formatTally(
+  groupId: GroupId,
+  planId: PlanId,
+  repo: CoordinationRepository = memoryRepository
+): string {
+  const plan = repo.getPlan(groupId, planId);
   if (!plan) return "No poll data.";
 
   if (plan.options.length === 0) return "No options set.";

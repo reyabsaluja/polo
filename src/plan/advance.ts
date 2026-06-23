@@ -1,4 +1,5 @@
 import type { GroupId, Plan, PlanId, PlanPhase } from "../domain/types.js";
+import type { CoordinationRepository, ParticipationRepository } from "../store/repository.js";
 import { memoryRepository } from "../store/memory.js";
 import { participationRepository } from "../governor/participation.js";
 
@@ -8,8 +9,12 @@ export interface PhaseTransition {
   reason: string;
 }
 
-export function evaluatePhaseAdvancement(groupId: GroupId, planId: PlanId): PhaseTransition | undefined {
-  const plan = memoryRepository.getPlan(groupId, planId);
+export function evaluatePhaseAdvancement(
+  groupId: GroupId,
+  planId: PlanId,
+  repo: CoordinationRepository = memoryRepository
+): PhaseTransition | undefined {
+  const plan = repo.getPlan(groupId, planId);
   if (!plan) return undefined;
 
   switch (plan.phase) {
@@ -30,14 +35,19 @@ export function evaluatePhaseAdvancement(groupId: GroupId, planId: PlanId): Phas
   }
 }
 
-export function advancePlan(groupId: GroupId, planId: PlanId): PhaseTransition | undefined {
-  const transition = evaluatePhaseAdvancement(groupId, planId);
+export function advancePlan(
+  groupId: GroupId,
+  planId: PlanId,
+  repo: CoordinationRepository = memoryRepository,
+  partRepo: ParticipationRepository = participationRepository
+): PhaseTransition | undefined {
+  const transition = evaluatePhaseAdvancement(groupId, planId, repo);
   if (!transition) return undefined;
 
-  memoryRepository.updatePlanPhase(groupId, planId, transition.to);
+  repo.updatePlanPhase(groupId, planId, transition.to);
 
   if (transition.to === "complete") {
-    participationRepository.setParticipation(groupId, "quiet");
+    partRepo.setParticipation(groupId, "quiet");
   }
 
   return transition;
@@ -98,8 +108,12 @@ function checkFollowThroughToComplete(plan: Plan): PhaseTransition | undefined {
   return undefined;
 }
 
-export function getReadinessReport(groupId: GroupId, planId: PlanId): string {
-  const plan = memoryRepository.getPlan(groupId, planId);
+export function getReadinessReport(
+  groupId: GroupId,
+  planId: PlanId,
+  repo: CoordinationRepository = memoryRepository
+): string {
+  const plan = repo.getPlan(groupId, planId);
   if (!plan) return "No plan found.";
 
   const active = plan.constraints.filter((c) => c.status === "active");
