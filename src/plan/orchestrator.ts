@@ -146,6 +146,18 @@ export async function handleMessage(message: Message, transport: Transport): Pro
 
   }
 
+  if (plan && plan.phase === "decided") {
+    const commitment = detectCommitment(message);
+    if (commitment) {
+      memoryRepository.addCommitment(message.groupId, plan.id, {
+        memberId: message.senderId,
+        action: commitment,
+        completed: false,
+      });
+      advancePlan(message.groupId, plan.id);
+    }
+  }
+
   if (plan) {
     let transition = advancePlan(message.groupId, plan.id);
     while (transition) {
@@ -252,6 +264,13 @@ async function handlePrivateMessage(
   }
 
   return null;
+}
+
+const COMMITMENT_RE = /\b(i'll|i will|i can|i got|let me|i('m| am) (going to|gonna))\b/i;
+
+function detectCommitment(message: Message): string | undefined {
+  if (!COMMITMENT_RE.test(message.text)) return undefined;
+  return message.text;
 }
 
 function expectedConstraintType(missingInfo: string | undefined): ConstraintType | undefined {
