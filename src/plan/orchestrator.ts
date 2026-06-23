@@ -159,8 +159,9 @@ export async function handleMessage(message: Message, transport: Transport): Pro
   }
 
   if (plan) {
+    const maxTransitions = 10;
     let transition = advancePlan(message.groupId, plan.id);
-    while (transition) {
+    for (let i = 0; transition && i < maxTransitions; i++) {
       if (transition.to === "finding_options") {
         return await handleFindOptions(message.groupId, plan, transport);
       }
