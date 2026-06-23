@@ -168,6 +168,10 @@ export async function handleMessage(message: Message, transport: Transport): Pro
     });
   }
 
+  if (!response) {
+    return null;
+  }
+
   await transport.send({ groupId: message.groupId, text: response });
   memoryRepository.recordOutgoingMessage(message.groupId, response, plan?.id, message.id);
 
