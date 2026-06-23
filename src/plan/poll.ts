@@ -16,14 +16,14 @@ export async function startPoll(
   config: PollConfig,
   transport: Transport
 ): Promise<Collection | undefined> {
-  memoryRepository.setPlanOptions(groupId, planId, config.options);
-
   const pollId = await transport.sendPoll({
     groupId,
     question: config.question,
     options: config.options.map(toPollOption),
     deadline: config.deadline,
   });
+
+  memoryRepository.setPlanOptions(groupId, planId, config.options);
 
   const collection = memoryRepository.createCollection(groupId, planId, {
     kind: "poll",
@@ -103,19 +103,25 @@ export async function closePollAndDecide(
   const collection = memoryRepository.getCollection(groupId, planId, collectionId);
   if (!collection) return undefined;
 
-  memoryRepository.closeCollection(groupId, planId, collectionId);
-
   const { winner, tally, totalVotes } = tallyVotes(groupId, planId);
   if (!winner) {
     await transport.send({
       groupId,
       text: "The poll closed but no clear winner emerged. Want to run another round or just pick one?",
     });
+    memoryRepository.closeCollection(groupId, planId, collectionId);
     return undefined;
   }
 
   const winnerVotes = tally.get(winner.id) ?? 0;
   const summary = `${winner.label} won ${winnerVotes}–${totalVotes - winnerVotes}.`;
+
+  await transport.send({
+    groupId,
+    text: `${summary} ${winner.details ? winner.details + "." : ""} Who's handling the reservation?`,
+  });
+
+  memoryRepository.closeCollection(groupId, planId, collectionId);
 
   const decision: Decision = {
     selectedOptionId: winner.id,
@@ -124,11 +130,6 @@ export async function closePollAndDecide(
   };
 
   memoryRepository.recordDecision(groupId, planId, decision);
-
-  await transport.send({
-    groupId,
-    text: `${summary} ${winner.details ? winner.details + "." : ""} Who's handling the reservation?`,
-  });
 
   return decision;
 }
