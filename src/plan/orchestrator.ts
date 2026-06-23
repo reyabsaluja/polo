@@ -1,16 +1,20 @@
 import type { Constraint, ConstraintType, MemberId, Message, Plan } from "../domain/types.js";
 import { isMockMode } from "../ai/client.js";
 import { extractConstraints } from "../ai/extract-constraints.js";
+import { findOptions, mockFindOptions } from "../ai/find-options.js";
 import { generateResponse } from "../ai/generate-response.js";
 import { mockExtractConstraints, mockGenerateResponse } from "../ai/mock.js";
 import { participationRepository, shouldRespond } from "../governor/participation.js";
 import { isGroupSafeMessage } from "../privacy/context.js";
 import { memoryRepository } from "../store/memory.js";
 import type { InboundTransportEvent, Transport } from "../transport/types.js";
+import { advancePlan } from "./advance.js";
+import { closePollAndDecide, shouldClosePoll, startPoll } from "./poll.js";
 
 export interface PoloResponse {
   text: string;
   newPlan?: Plan;
+  phaseAdvanced?: boolean;
 }
 
 interface Extraction {
@@ -28,17 +32,39 @@ export async function handleTransportEvent(
     case "message":
       return handleMessage(event.message, transport);
     case "poll_vote":
-      memoryRepository.recordVote(
-        event.vote.groupId,
-        event.vote.planId,
-        event.vote.optionId,
-        event.vote.voterId,
-        event.vote.pollId
-      );
-      return null;
+      return handlePollVote(event.vote, transport);
     case "reaction":
       return null;
   }
+}
+
+async function handlePollVote(
+  vote: InboundTransportEvent & { kind: "poll_vote" } extends { vote: infer V } ? V : never,
+  transport: Transport
+): Promise<PoloResponse | null> {
+  memoryRepository.recordVote(
+    vote.groupId,
+    vote.planId,
+    vote.optionId,
+    vote.voterId,
+    vote.pollId
+  );
+
+  const plan = memoryRepository.getPlan(vote.groupId, vote.planId);
+  if (!plan) return null;
+
+  const pollCollections = memoryRepository.getOpenCollections(vote.groupId, vote.planId, "poll");
+  for (const collection of pollCollections) {
+    if (shouldClosePoll(vote.groupId, vote.planId, collection.id)) {
+      const decision = await closePollAndDecide(vote.groupId, vote.planId, collection.id, transport);
+      if (decision) {
+        advancePlan(vote.groupId, vote.planId);
+        return { text: decision.summary, phaseAdvanced: true };
+      }
+    }
+  }
+
+  return null;
 }
 
 export async function handleMessage(message: Message, transport: Transport): Promise<PoloResponse | null> {
@@ -116,8 +142,15 @@ export async function handleMessage(message: Message, transport: Transport): Pro
       memoryRepository.addInterestedMember(message.groupId, plan.id, memberId);
     }
 
-    if (plan.phase === "gathering_intent" && extraction.constraints.length > 0) {
-      memoryRepository.updatePlanPhase(message.groupId, plan.id, "collecting_constraints");
+  }
+
+  if (plan) {
+    let transition = advancePlan(message.groupId, plan.id);
+    while (transition) {
+      if (transition.to === "finding_options") {
+        return await handleFindOptions(message.groupId, plan, transport);
+      }
+      transition = advancePlan(message.groupId, plan.id);
     }
   }
 
@@ -149,6 +182,38 @@ export async function handleMessage(message: Message, transport: Transport): Pro
   }
 
   return { text: response, newPlan: plan && !activePlan ? plan : undefined };
+}
+
+async function handleFindOptions(
+  groupId: string,
+  plan: Plan,
+  transport: Transport
+): Promise<PoloResponse> {
+  const group = memoryRepository.getGroup(groupId)!;
+
+  const result = isMockMode()
+    ? mockFindOptions(plan, group)
+    : await findOptions(plan, group);
+
+  if (result.options.length === 0) {
+    const text = "I couldn't find options matching all constraints. Could you relax the budget or location?";
+    await transport.send({ groupId, text });
+    memoryRepository.updatePlanPhase(groupId, plan.id, "collecting_constraints");
+    participationRepository.setParticipation(groupId, "facilitating", plan.id);
+    return { text, phaseAdvanced: false };
+  }
+
+  const question = `Here are three options for ${plan.description}. Vote for your pick:`;
+
+  await startPoll(groupId, plan.id, {
+    question,
+    options: result.options,
+    targetMemberIds: plan.interestedMembers.length > 0 ? plan.interestedMembers : undefined,
+  }, transport);
+
+  advancePlan(groupId, plan.id);
+  participationRepository.setParticipation(groupId, "waiting", plan.id);
+  return { text: question, phaseAdvanced: true };
 }
 
 function expectedConstraintType(missingInfo: string | undefined): ConstraintType | undefined {
