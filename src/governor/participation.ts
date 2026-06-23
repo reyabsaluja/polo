@@ -107,10 +107,18 @@ function isShortPlanningAnswer(text: string): boolean {
   return /^(yes|yeah|yep|no|nah|sure|works|done|in|out)$/i.test(text.trim());
 }
 
+const STOP_WORDS = new Set([
+  "this", "that", "with", "from", "what", "when", "where", "plan",
+  "some", "will", "just", "have", "been", "like", "they", "them",
+  "would", "could", "should", "about", "there", "their", "which",
+  "dinner", "lunch", "place", "options", "restaurant", "event",
+  "group", "everyone", "something", "anything",
+]);
+
 function isUsefulPlanTerm(word: string): boolean {
   const cleaned = word.replace(/[^a-z0-9$]/g, "");
-  if (cleaned.length <= 3) return false;
-  return !new Set(["this", "that", "with", "from", "what", "when", "where", "plan"]).has(cleaned);
+  if (cleaned.length <= 4) return false;
+  return !STOP_WORDS.has(cleaned);
 }
 
 export const participationRepository: ParticipationRepository = {
