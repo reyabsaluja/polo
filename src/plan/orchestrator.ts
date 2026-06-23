@@ -7,7 +7,7 @@ import { mockExtractConstraints, mockGenerateResponse } from "../ai/mock.js";
 import { participationRepository, shouldRespond } from "../governor/participation.js";
 import { isGroupSafeMessage } from "../privacy/context.js";
 import { memoryRepository } from "../store/memory.js";
-import type { InboundTransportEvent, PrivateInboundMessage, Transport } from "../transport/types.js";
+import type { InboundTransportEvent, PollVote, PrivateInboundMessage, Transport } from "../transport/types.js";
 import { advancePlan } from "./advance.js";
 import { closePollAndDecide, shouldClosePoll, startPoll } from "./poll.js";
 
@@ -41,7 +41,7 @@ export async function handleTransportEvent(
 }
 
 async function handlePollVote(
-  vote: InboundTransportEvent & { kind: "poll_vote" } extends { vote: infer V } ? V : never,
+  vote: PollVote,
   transport: Transport
 ): Promise<PoloResponse | null> {
   memoryRepository.recordVote(
